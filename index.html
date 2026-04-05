@@ -581,8 +581,55 @@ function buildDashboard(d,funds){
 
 function downloadReport(){
   const html=document.getElementById('dashboard-output').innerHTML;
-  const css=document.querySelector('style').textContent;
-  const full=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FundAudit Report</title><style>body{font-family:sans-serif;padding:2rem;max-width:960px;margin:0 auto}${css}</style></head><body>${html}</body></html>`;
+  // Embed real colour values so the report works as a standalone file without CSS variables
+  const standaloneCss=`
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'DM Sans',sans-serif;background:#F7F5F0;color:#0D0D0D;font-size:14px;line-height:1.6;padding:2rem;max-width:960px;margin:0 auto}
+    .dash{font-family:'DM Sans',sans-serif}
+    .d-sep{height:1px;background:#DDD8CF;margin:1.25rem 0}
+    .d-sec-hd{font-size:10px;font-weight:500;color:#6B6560;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.75rem;padding-bottom:.35rem;border-bottom:1px solid #DDD8CF}
+    .d-card{background:#fff;border:1px solid #DDD8CF;border-radius:12px;padding:1rem 1.25rem}
+    .d-card-warn{border-color:#F7C1C1}.d-card-ok{border-color:#C0DD97}
+    .d-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .d-g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .d-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .d-mc{background:#F7F5F0;border-radius:8px;padding:.75rem 1rem}
+    .d-ml{font-size:10px;color:#6B6560;margin-bottom:2px}
+    .d-mv{font-size:20px;font-weight:500;color:#0D0D0D}
+    .d-ms{font-size:10px;color:#6B6560;margin-top:2px}
+    .d-fn{font-weight:500;font-size:12px;color:#0D0D0D}.d-fs{font-size:10px;color:#6B6560}
+    .d-g{color:#2D6A4F;font-weight:500}.d-r{color:#9B2226;font-weight:500}.d-o{color:#7B5E00;font-weight:500}.d-b{color:#1B4F72;font-weight:500}
+    .d-tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px}
+    .d-tg{background:#D8F3DC;color:#2D6A4F}.d-tr{background:#FFDDD2;color:#9B2226}.d-to{background:#FFF3CD;color:#7B5E00}.d-tb{background:#D6EAF8;color:#1B4F72}.d-tgy{background:#EDE9E0;color:#6B6560}
+    .d-vd{font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;white-space:nowrap}
+    .d-hold{background:#D8F3DC;color:#2D6A4F}.d-exit{background:#FFDDD2;color:#9B2226}.d-sw{background:#FFF3CD;color:#7B5E00}
+    .d-str{background:#D8F3DC;color:#2D6A4F}.d-wk{background:#FFDDD2;color:#9B2226}.d-av{background:#D6EAF8;color:#1B4F72}
+    .d-pill{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px}
+    .d-pill-bad{background:#FFDDD2;color:#9B2226}.d-pill-warn{background:#FFF3CD;color:#7B5E00}.d-pill-ok{background:#D8F3DC;color:#2D6A4F}
+    .d-callout{padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.6;margin-top:8px}
+    .d-c-warn{background:#FFDDD2;color:#7F1D1D}.d-c-ok{background:#D8F3DC;color:#14532D}.d-c-info{background:#D6EAF8;color:#1E3A5F}.d-c-amb{background:#FFF3CD;color:#451A03}
+    .d-tbl{width:100%;border-collapse:collapse;font-size:11px}
+    .d-tbl th{text-align:left;padding:6px 8px;background:#F7F5F0;color:#6B6560;font-weight:500;font-size:10px;border-bottom:1px solid #DDD8CF}
+    .d-tbl td{padding:6px 8px;border-bottom:1px solid #DDD8CF;color:#0D0D0D;vertical-align:middle}
+    .d-tbl tr:last-child td{border-bottom:none}
+    .d-nr{text-align:right;font-variant-numeric:tabular-nums}.d-nc{text-align:center}
+    .d-hl-g{background:#BBDEFB;color:#1A237E;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+    .d-hl-a{background:#FFF9C4;color:#F57F17;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+    .d-hl-r{background:#FFCDD2;color:#B71C1C;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+    .d-hl-b{background:#D6EAF8;color:#1B4F72;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+    .d-bb{height:6px;background:#EDE9E0;border-radius:3px;flex:1}
+    .d-bf{height:6px;border-radius:3px}
+    .d-bw{display:flex;align-items:center;gap:6px}
+    @media(max-width:640px){.d-g4{grid-template-columns:1fr 1fr}.d-g3{grid-template-columns:1fr}.d-g2{grid-template-columns:1fr}}
+  `;
+  const full=`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>FundAudit Report — ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>${standaloneCss}</style>
+</head><body>${html}</body></html>`;
   const a=document.createElement('a');
   a.href='data:text/html;charset=utf-8,'+encodeURIComponent(full);
   a.download='FundAudit_Report_'+new Date().toISOString().slice(0,10)+'.html';
