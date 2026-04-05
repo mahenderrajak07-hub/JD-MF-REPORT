@@ -317,14 +317,26 @@ async function runAnalysis(){
     clearInterval(timer);
     STEPS.forEach((_,i)=>{const el=document.getElementById(`step-${i}`);if(el){el.className='step done';el.querySelector('.step-dot').textContent='✓';}});
 
-    if(!resp.ok){
-      let msg=`Server error ${resp.status}`;
-      try{const e=await resp.json();msg=e.error||msg;}catch{}
-      throw new Error(msg);
+    // Parse response text first so we can show useful errors
+    const respText=await resp.text();
+    let data;
+    try{data=JSON.parse(respText);}catch{
+      throw new Error('Invalid response from server. Please retry.');
     }
 
-    const data=await resp.json();
-    const raw=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'';
+    if(!resp.ok){
+      // Extract the real error message from Anthropic or our server
+      const msg=data.error?.message||data.error||data.message||`Server error ${resp.status}`;
+      throw new Error(typeof msg==='string'?msg:JSON.stringify(msg));
+    }
+
+    // Check for Anthropic-level errors even on 200
+    if(data.type==='error'){
+      throw new Error(data.error?.message||'AI service error. Please retry.');
+    }
+
+    const raw=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('');
+    if(!raw){throw new Error('Empty response from AI. Please retry.');}
     const json=repairJSON(raw);
 
     const total=funds.reduce((s,f)=>{const n=parseFloat(f.amt.replace(/[₹,\s]/g,''));return s+(isNaN(n)?0:n);},0);
@@ -346,7 +358,9 @@ async function runAnalysis(){
     progressEl.style.display='none';
     document.getElementById('analyze-btn').disabled=false;
     document.getElementById('how-section').style.display='block';
-    showToast('Error: '+err.message,5000);
+    const msg=err.message||String(err)||'Unknown error. Please retry.';
+    showToast('Error: '+msg,6000);
+    console.error('Analysis error:',err);
   }
 }
 
