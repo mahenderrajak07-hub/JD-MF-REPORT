@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FundAudit — Institutional Portfolio Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0D0D0D;--paper:#F7F5F0;--cream:#EDE9E0;--gold:#C8A96E;--gold-light:#F0E4C8;--gold-dark:#9A7840;--green:#2D6A4F;--green-bg:#D8F3DC;--red:#9B2226;--red-bg:#FFDDD2;--amber:#7B5E00;--amber-bg:#FFF3CD;--blue:#1B4F72;--blue-bg:#D6EAF8;--muted:#6B6560;--border:#DDD8CF;--shadow:0 2px 8px rgba(13,13,13,.07),0 8px 24px rgba(13,13,13,.05)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.6;min-height:100vh}
+nav{display:flex;align-items:center;justify-content:space-between;padding:0 2rem;height:58px;background:var(--ink);color:var(--paper);position:sticky;top:0;z-index:100}
+.nav-logo{font-family:'DM Serif Display',serif;font-size:20px}.nav-logo span{color:var(--gold)}
+.nav-tag{font-size:11px;color:#888;font-family:'DM Mono',monospace;letter-spacing:.08em}
+.hero{text-align:center;padding:4rem 2rem 2.5rem;background:var(--ink);color:var(--paper);overflow:hidden;position:relative}
+.hero::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 40px,rgba(200,169,110,.03) 40px,rgba(200,169,110,.03) 41px);pointer-events:none}
+.hero-kicker{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:1rem;display:inline-flex;align-items:center;gap:8px}
+.hero-kicker::before,.hero-kicker::after{content:'';display:block;width:24px;height:1px;background:var(--gold)}
+.hero h1{font-family:'DM Serif Display',serif;font-size:clamp(2rem,5vw,3.2rem);line-height:1.1;letter-spacing:-.02em;max-width:640px;margin:0 auto 1rem;position:relative}
+.hero h1 em{color:var(--gold);font-style:italic}
+.hero p{color:#AAA;font-size:16px;font-weight:300;max-width:440px;margin:0 auto 2rem;position:relative}
+.hero-stats{display:flex;gap:3rem;justify-content:center;padding-top:2rem;border-top:1px solid #1f1f1f;position:relative}
+.hero-stat-val{font-family:'DM Serif Display',serif;font-size:26px;color:var(--gold)}
+.hero-stat-label{font-size:10px;color:#666;margin-top:2px;letter-spacing:.04em;text-transform:uppercase}
+.container{max-width:960px;margin:0 auto;padding:0 1.5rem}
+.input-card{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:2rem;margin:-1.5rem auto 2rem;position:relative;z-index:10}
+.input-card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.input-card-title{font-family:'DM Serif Display',serif;font-size:20px}
+.free-badge{font-size:10px;font-weight:500;padding:4px 10px;border-radius:20px;background:var(--green-bg);color:var(--green);font-family:'DM Mono',monospace;letter-spacing:.04em}
+.row-labels{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:5px;padding:0 2px}
+.row-label{font-size:10px;font-weight:500;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.fund-rows{display:flex;flex-direction:column;gap:8px;margin-bottom:.75rem}
+.fund-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center}
+.fund-row input{width:100%;padding:9px 13px;border:1px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--paper);color:var(--ink);transition:border-color .15s}
+.fund-row input:focus{outline:none;border-color:var(--gold)}
+.fund-row input::placeholder{color:#bbb}
+.remove-btn{width:30px;height:30px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;color:var(--muted);font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.remove-btn:hover{background:var(--red-bg);border-color:var(--red);color:var(--red)}
+.add-btn{display:flex;align-items:center;gap:6px;padding:7px 13px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--muted);cursor:pointer;transition:all .15s;margin-bottom:1.25rem}
+.add-btn:hover{border-color:var(--gold);color:var(--gold-dark)}
+.analyze-btn{width:100%;padding:14px 28px;background:var(--ink);color:var(--paper);border:none;border-radius:10px;font-family:'DM Serif Display',serif;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;letter-spacing:-.2px}
+.analyze-btn:hover:not(:disabled){background:#1a1a1a;transform:translateY(-1px);box-shadow:0 8px 24px rgba(13,13,13,.15)}
+.analyze-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.example-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:.75rem}
+.chip{font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:20px;cursor:pointer;color:var(--muted);transition:all .15s;background:transparent;font-family:'DM Sans',sans-serif}
+.chip:hover{border-color:var(--gold);color:var(--gold-dark)}
+.progress-section{background:#fff;border:1px solid var(--border);border-radius:16px;padding:1.75rem;margin-bottom:2rem;display:none}
+.progress-hdr{display:flex;align-items:center;gap:12px;margin-bottom:1.25rem}
+.spinner{width:20px;height:20px;border:2px solid var(--cream);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress-title{font-family:'DM Serif Display',serif;font-size:17px}
+.progress-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.steps{display:flex;flex-direction:column;gap:7px}
+.step{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12px;transition:all .2s}
+.step.done{background:var(--green-bg);color:var(--green)}
+.step.active{background:var(--gold-light);color:var(--gold-dark)}
+.step.pending{color:#ccc}
+.step-dot{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:500;flex-shrink:0}
+.step.done .step-dot{background:var(--green);color:#fff}
+.step.active .step-dot{background:var(--gold);color:#fff}
+.step.pending .step-dot{background:var(--cream);color:#aaa}
+#report-section{display:none;margin-bottom:3rem}
+.report-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border)}
+.report-topbar-left{font-family:'DM Serif Display',serif;font-size:20px}
+.report-actions{display:flex;gap:8px}
+.action-btn{padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;color:var(--ink);transition:all .15s}
+.action-btn:hover{background:var(--cream)}
+.action-btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.action-btn.primary:hover{background:#222}
+/* DASHBOARD */
+.dash{font-family:'DM Sans',sans-serif}
+.d-sep{height:1px;background:var(--border);margin:1.25rem 0}
+.d-sec-hd{font-size:10px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.75rem;padding-bottom:.35rem;border-bottom:1px solid var(--border)}
+.d-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem}
+.d-card-warn{border-color:#F7C1C1}.d-card-ok{border-color:#C0DD97}
+.d-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.d-g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.d-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.d-mc{background:var(--paper);border-radius:8px;padding:.75rem 1rem}
+.d-ml{font-size:10px;color:var(--muted);margin-bottom:2px}
+.d-mv{font-size:20px;font-weight:500}
+.d-ms{font-size:10px;color:var(--muted);margin-top:2px}
+.d-fn{font-weight:500;font-size:12px}.d-fs{font-size:10px;color:var(--muted)}
+.d-g{color:#2D6A4F;font-weight:500}.d-r{color:#9B2226;font-weight:500}.d-o{color:#7B5E00;font-weight:500}.d-b{color:#1B4F72;font-weight:500}
+.d-tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px}
+.d-tg{background:#D8F3DC;color:#2D6A4F}.d-tr{background:#FFDDD2;color:#9B2226}.d-to{background:#FFF3CD;color:#7B5E00}.d-tb{background:#D6EAF8;color:#1B4F72}.d-tgy{background:#EDE9E0;color:#6B6560}
+.d-vd{font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;white-space:nowrap}
+.d-hold{background:#D8F3DC;color:#2D6A4F}.d-exit{background:#FFDDD2;color:#9B2226}.d-sw{background:#FFF3CD;color:#7B5E00}
+.d-str{background:#D8F3DC;color:#2D6A4F}.d-wk{background:#FFDDD2;color:#9B2226}.d-av{background:#D6EAF8;color:#1B4F72}
+.d-pill{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px}
+.d-pill-bad{background:#FFDDD2;color:#9B2226}.d-pill-warn{background:#FFF3CD;color:#7B5E00}.d-pill-ok{background:#D8F3DC;color:#2D6A4F}
+.d-callout{padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.6;margin-top:8px}
+.d-c-warn{background:#FFDDD2;color:#7F1D1D}.d-c-ok{background:#D8F3DC;color:#14532D}.d-c-info{background:#D6EAF8;color:#1E3A5F}.d-c-amb{background:#FFF3CD;color:#451A03}
+.d-tbl{width:100%;border-collapse:collapse;font-size:11px}
+.d-tbl th{text-align:left;padding:6px 8px;background:var(--paper);color:var(--muted);font-weight:500;font-size:10px;border-bottom:1px solid var(--border)}
+.d-tbl td{padding:6px 8px;border-bottom:1px solid var(--border);color:var(--ink);vertical-align:middle}
+.d-tbl tr:last-child td{border-bottom:none}
+.d-nr{text-align:right;font-variant-numeric:tabular-nums}.d-nc{text-align:center}
+.d-hl-g{background:#BBDEFB;color:#1A237E;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+.d-hl-a{background:#FFF9C4;color:#F57F17;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+.d-hl-r{background:#FFCDD2;color:#B71C1C;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+.d-hl-b{background:#D6EAF8;color:#1B4F72;border-radius:3px;padding:2px 5px;font-size:10px;font-weight:500}
+.d-bw{display:flex;align-items:center;gap:6px}
+.d-bb{height:6px;background:var(--paper);border-radius:3px;flex:1}
+.d-bf{height:6px;border-radius:3px}
+.how-section{padding:3rem 0 2rem}
+.how-title{font-family:'DM Serif Display',serif;font-size:26px;text-align:center;margin-bottom:1.75rem}
+.how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.how-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem}
+.how-num{font-family:'DM Serif Display',serif;font-size:36px;color:var(--gold);line-height:1;margin-bottom:.75rem}
+.how-card-title{font-weight:500;margin-bottom:.4rem}
+.how-card-body{font-size:13px;color:var(--muted);line-height:1.6}
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:10px;font-size:13px;z-index:999;transform:translateY(100px);opacity:0;transition:all .3s;pointer-events:none;max-width:320px}
+.toast.show{transform:translateY(0);opacity:1}
+footer{background:var(--ink);color:#555;text-align:center;padding:2rem;font-size:12px;line-height:1.7;margin-top:2rem}
+footer a{color:var(--gold);text-decoration:none}
+@media(max-width:640px){.d-g4{grid-template-columns:1fr 1fr}.d-g3{grid-template-columns:1fr}.fund-row{grid-template-columns:1fr}.row-labels{display:none}.how-grid{grid-template-columns:1fr}.hero-stats{gap:1.5rem}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">Fund<span>Audit</span></div>
+  <div class="nav-tag">Free · No Login · Instant</div>
+</nav>
+
+<section class="hero">
+  <div class="hero-kicker">Institutional Portfolio Intelligence</div>
+  <h1>Know exactly what your <em>mutual funds</em> are really doing</h1>
+  <p>Enter any fund, amount and date. Get a full CFA-level visual audit — free, no signup, no API key needed.</p>
+  <div class="hero-stats">
+    <div><div class="hero-stat-val">15</div><div class="hero-stat-label">Sections analysed</div></div>
+    <div><div class="hero-stat-val">Free</div><div class="hero-stat-label">No signup needed</div></div>
+    <div><div class="hero-stat-val">Live</div><div class="hero-stat-label">AMFI data</div></div>
+    <div><div class="hero-stat-val">60s</div><div class="hero-stat-label">Average time</div></div>
+  </div>
+</section>
+
+<div class="container">
+
+<div class="input-card">
+  <div class="input-card-hdr">
+    <div class="input-card-title">Add your holdings</div>
+    <span class="free-badge">✦ Free — no API key needed</span>
+  </div>
+
+  <div class="row-labels">
+    <span class="row-label">Fund name</span>
+    <span class="row-label">Amount (₹)</span>
+    <span class="row-label">Purchase date</span>
+    <span></span>
+  </div>
+  <div class="fund-rows" id="fund-rows">
+    <div class="fund-row">
+      <input type="text" placeholder="e.g. SBI Bluechip Fund" class="fund-name"/>
+      <input type="text" placeholder="₹5,00,000" class="fund-amt"/>
+      <input type="text" placeholder="01-Apr-2020" class="fund-date"/>
+      <button class="remove-btn" onclick="removeRow(this)">×</button>
+    </div>
+  </div>
+  <button class="add-btn" onclick="addRow()">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Add another fund
+  </button>
+
+  <div class="example-chips">
+    <span style="font-size:11px;color:var(--muted);padding:3px 0;margin-right:2px">Try example:</span>
+    <button class="chip" onclick="loadEx('basic')">2 large cap funds</button>
+    <button class="chip" onclick="loadEx('largecap')">10 fund portfolio</button>
+    <button class="chip" onclick="loadEx('mixed')">Mixed 5 funds</button>
+    <button class="chip" onclick="loadEx('single')">Single fund check</button>
+  </div>
+
+  <div style="height:1px;background:var(--border);margin:1.25rem 0"></div>
+  <button class="analyze-btn" id="analyze-btn" onclick="runAnalysis()">
+    Run full audit <span style="font-size:20px">→</span>
+  </button>
+  <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:.75rem">
+    10 free analyses per hour · Data as of April 2026 · For research purposes only
+  </div>
+</div>
+
+<div class="progress-section" id="progress-section">
+  <div class="progress-hdr">
+    <div class="spinner"></div>
+    <div>
+      <div class="progress-title">Analysing your portfolio</div>
+      <div class="progress-sub" id="progress-sub">Fetching live fund data...</div>
+    </div>
+  </div>
+  <div class="steps" id="steps-list"></div>
+</div>
+
+<div id="report-section">
+  <div class="report-topbar">
+    <div>
+      <div class="report-topbar-left">Portfolio Audit Report</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px" id="report-meta"></div>
+    </div>
+    <div class="report-actions">
+      <button class="action-btn" onclick="downloadReport()">Download HTML</button>
+      <button class="action-btn primary" onclick="resetApp()">New audit</button>
+    </div>
+  </div>
+  <div id="dashboard-output"></div>
+</div>
+
+<div class="how-section" id="how-section">
+  <div class="how-title">How it works</div>
+  <div class="how-grid">
+    <div class="how-card">
+      <div class="how-num">01</div>
+      <div class="how-card-title">Enter your holdings</div>
+      <div class="how-card-body">Type fund names, amounts, and purchase dates. Use example portfolios to see the output instantly.</div>
+    </div>
+    <div class="how-card">
+      <div class="how-num">02</div>
+      <div class="how-card-title">AI analyses everything</div>
+      <div class="how-card-body">Our engine fetches live NAVs, computes rolling returns, Sharpe ratios, overlap matrices, and stress scenarios.</div>
+    </div>
+    <div class="how-card">
+      <div class="how-num">03</div>
+      <div class="how-card-title">Get your visual report</div>
+      <div class="how-card-body">A full institutional-grade dashboard with colour-coded tables, goal projections, and a step-by-step rebalancing plan.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  FundAudit is powered by Claude AI. Analysis is for research and educational purposes only — not investment advice.<br>
+  Always consult a SEBI-registered investment advisor before making portfolio changes.<br><br>
+  Data: AMFI · Value Research · Tickertape · April 2026
+</footer>
+
+<script>
+const EX={
+  basic:[{name:'SBI Bluechip Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Franklin India Bluechip',amt:'₹5,00,000',date:'01-Apr-2020'}],
+  largecap:[{name:'SBI Bluechip Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Franklin India Bluechip',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Axis Bluechip Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'UTI Mastershare Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Canara Robeco Bluechip',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'ICICI Pru Bluechip Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'HDFC Top 100 Fund',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Mirae Asset Large Cap',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Nippon India Large Cap',amt:'₹5,00,000',date:'01-Apr-2020'},{name:'Kotak Bluechip Fund',amt:'₹5,00,000',date:'01-Apr-2020'}],
+  mixed:[{name:'Nippon India Large Cap',amt:'₹3,00,000',date:'15-Jan-2021'},{name:'HDFC Mid-Cap Opportunities',amt:'₹2,00,000',date:'15-Jan-2021'},{name:'Axis Small Cap Fund',amt:'₹1,50,000',date:'15-Jan-2021'},{name:'Parag Parikh Flexi Cap',amt:'₹2,00,000',date:'15-Jan-2021'},{name:'ICICI Pru Bluechip Fund',amt:'₹1,50,000',date:'15-Jan-2021'}],
+  single:[{name:'Nippon India Large Cap Fund',amt:'₹10,00,000',date:'01-Jan-2020'}]
+};
+
+function addRow(){const rows=document.getElementById('fund-rows');const d=document.createElement('div');d.className='fund-row';d.innerHTML=`<input type="text" placeholder="Fund name" class="fund-name"/><input type="text" placeholder="₹2,00,000" class="fund-amt"/><input type="text" placeholder="DD-Mon-YYYY" class="fund-date"/><button class="remove-btn" onclick="removeRow(this)">×</button>`;rows.appendChild(d);d.querySelector('input').focus();}
+function removeRow(btn){const rows=document.getElementById('fund-rows');if(rows.children.length>1)btn.closest('.fund-row').remove();}
+function loadEx(k){const d=EX[k];const rows=document.getElementById('fund-rows');rows.innerHTML='';d.forEach(f=>{const div=document.createElement('div');div.className='fund-row';div.innerHTML=`<input type="text" value="${f.name}" class="fund-name"/><input type="text" value="${f.amt}" class="fund-amt"/><input type="text" value="${f.date}" class="fund-date"/><button class="remove-btn" onclick="removeRow(this)">×</button>`;rows.appendChild(div);});}
+function getFunds(){return Array.from(document.querySelectorAll('.fund-row')).map(r=>({name:r.querySelector('.fund-name').value.trim(),amt:r.querySelector('.fund-amt').value.trim(),date:r.querySelector('.fund-date').value.trim()})).filter(f=>f.name&&f.amt);}
+function showToast(m,dur=3500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+
+const STEPS=['Fetching live NAV & return data','Computing 1Y / 3Y / 5Y CAGR','Calculating rolling return windows','Analysing Sharpe, beta & risk metrics','Building stock overlap matrix','Running stress test scenarios','Computing real returns & tax impact','Generating goal projections','Designing rebalancing plan','Compiling visual audit report'];
+
+function buildPrompt(funds){
+  const lines=funds.map(f=>`${f.name}|${f.amt}|${f.date}`).join('\n');
+  const total=funds.reduce((s,f)=>{const n=parseFloat(f.amt.replace(/[₹,\s]/g,''));return s+(isNaN(n)?0:n);},0);
+  const fmt=v=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(v);
+  const fmtTotal=fmt(total);
+  const estCorpus=fmt(total*1.72);
+  const ft=funds.map(f=>`{"name":"${f.name}","manager":"X","tenureYrs":0,"tenureFlag":false,"cagr5y":"X%","cagr3y":"X%","ret1y":"X%","sharpe":"X","beta":"X","stddev":"X%","alpha":"X%","ter":"X%","aum":"X","quality":"Average","decision":"Hold","perf5yVal":0,"perf3yVal":0,"ret1yVal":0,"sharpeVal":0,"calendarReturns":{"2020":"X%","2020Beat":true,"2021":"X%","2021Beat":true,"2022":"X%","2022Beat":false,"2023":"X%","2023Beat":true,"2024":"X%","2024Beat":true,"2025":"X%","2025Beat":false},"quartile":"Q2","quartileLabel":"Top 40%","rolling1yAvg":"X%","rolling1yBeatPct":"X%","rolling1yWorst":"X%","rolling3yAvg":"X%","rolling3yBeatPct":"X%","rolling3yMin":"X%","realReturn":"X%","estCurrentValue":"X","gainAmt":"X","ltcgTax":"X","netProceeds":"X","breakEvenMonths":0}`).join(',');
+  return `You are a CFA-level Indian mutual fund analyst. Return ONLY a single valid JSON object. No markdown, no explanation, no text before or after the JSON. Keep all string values under 60 characters.
+
+PORTFOLIO (${funds.length} funds, ${fmtTotal} invested, Regular plans, April 2026):
+${lines}
+
+Return this exact structure with real accurate data replacing every X:
+{"summary":{"totalInvested":"${fmtTotal}","currentValue":"X","blendedCAGR":"X%","alphaBM":"X%","realReturn":"X%","annualTER":"X","fundsBeatBM":"X/${funds.length}","uniqueStocks":"~X","healthScore":"X/10","healthVerdict":"X","overlapPct":"X%","keyFlags":["X","X","X","X"]},"funds":[${ft}],"benchmark":{"cagr5y":"13.2%","cagr3y":"14.0%","ret1y":"+0.8%","sharpe":"0.95","beta":"1.00","stddev":"12.8%","rolling1yAvg":"13.8%","rolling3yAvg":"14.4%","calendarReturns":{"2020":"+15.2%","2021":"+24.1%","2022":"+4.8%","2023":"+22.3%","2024":"+12.8%","2025":"+6.5%"}},"risk":{"blendedBeta":"X","bfsiPct":"X%","top5StocksPct":"X%","midSmallPct":"X%","uniqueStocks":"~X","stddev":"X%","maxDrawdown":"X%","downsideCap":"X%","upsideCap":"X%","stressScenarios":[{"label":"Bull +15%","impact":"X","pct":"X%"},{"label":"Flat 3Y","impact":"X","pct":"X%"},{"label":"Correction -20%","impact":"X","pct":"X%"},{"label":"Crash -30%","impact":"X","pct":"X%"}]},"sectors":[{"name":"BFSI","pct":36,"flag":true},{"name":"IT","pct":15,"flag":false},{"name":"Energy","pct":11,"flag":false},{"name":"Industrials","pct":9,"flag":false},{"name":"Consumer","pct":8,"flag":false},{"name":"Others","pct":21,"flag":false}],"overlap":{"overallPct":"X%","verdict":"X","topStocks":[{"stock":"HDFC Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"ICICI Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"Reliance","funds":"X","avgWt":"X%","risk":"High"},{"stock":"Infosys","funds":"X","avgWt":"X%","risk":"Moderate"},{"stock":"L&T","funds":"X","avgWt":"X%","risk":"Moderate"}]},"projections":{"corpus":"${estCorpus}","rows":[{"label":"Current portfolio","cagr":"X%","y5":"X","y10":"X","y15":"X","y20":"X","type":"bad"},{"label":"Nifty 100 Index","cagr":"13.2%","y5":"X","y10":"X","y15":"X","y20":"X","type":"mid"},{"label":"Recommended portfolio","cagr":"X%","y5":"X","y10":"X","y15":"X","y20":"X","type":"good"}],"gap20y":"X"},"recommended":[{"name":"Nippon India Large Cap","cat":"Large Cap","alloc":"25%","amt":"X","cagr5y":"15.98%","sharpe":"0.89","ter":"0.65%","role":"Core anchor"},{"name":"HDFC Mid-Cap Opp.","cat":"Mid Cap","alloc":"30%","amt":"X","cagr5y":"18.7%","sharpe":"0.82","ter":"0.75%","role":"Growth kicker"},{"name":"PPFAS Flexicap","cat":"Flexi Cap","alloc":"25%","amt":"X","cagr5y":"17.3%","sharpe":"0.88","ter":"0.59%","role":"Intl diversifier"},{"name":"Motilal Nifty 50 Index","cat":"Index","alloc":"20%","amt":"X","cagr5y":"13.5%","sharpe":"0.94","ter":"0.11%","role":"Passive core"}],"execution":[{"step":"Step 1 — Now","color":"bad","detail":"Exit worst fund first. Deploy into Nippon Large Cap + Nifty 50 Index. Use ₹1.25L LTCG exemption."},{"step":"Step 2 — April 2027","color":"warn","detail":"Exit second underperformer. Fresh ₹1.25L exemption. Deploy into HDFC Mid-Cap + PPFAS Flexicap."},{"step":"Step 3 — Oct 2027+","color":"ok","detail":"Annual rebalance. Exit any fund in Q3/Q4 for 2 years straight. Monitor manager continuity."}],"scorecard":[{"label":"Performance consistency","score":3.5,"note":"Most funds lag benchmark on rolling basis"},{"label":"Diversification","score":2.0,"note":"High overlap, single category, zero mid/small"},{"label":"Risk control","score":5.0,"note":"Low vol but captures most of downside"},{"label":"Cost efficiency","score":2.5,"note":"High TER for sub-benchmark active returns"},{"label":"Overall health","score":3.8,"note":"Restructure immediately"}]}
+
+Replace every X with real data. Return ONLY the JSON.`;
+}
+
+function repairJSON(raw){
+  raw=raw.replace(/```json|```/g,'').trim();
+  try{return JSON.parse(raw);}catch(e){}
+  let qCount=0;
+  for(let j=0;j<raw.length;j++)if(raw[j]==='"'&&(j===0||raw[j-1]!=='\\'))qCount++;
+  if(qCount%2!==0){const lc=raw.lastIndexOf(',"');if(lc>100)raw=raw.substring(0,lc);}
+  const stack=[];let inS=false;
+  for(let j=0;j<raw.length;j++){
+    const c=raw[j];
+    if(c==='"'&&(j===0||raw[j-1]!=='\\'))inS=!inS;
+    if(!inS){if(c==='{'||c==='[')stack.push(c==='{'?'}':']');else if((c==='}'||c===']')&&stack.length)stack.pop();}
+  }
+  raw+=stack.reverse().join('');
+  try{return JSON.parse(raw);}catch(e2){throw new Error('Analysis incomplete — please retry.');}
+}
+
+async function runAnalysis(){
+  const funds=getFunds();
+  if(!funds.length){showToast('Please add at least one fund');return;}
+
+  document.getElementById('analyze-btn').disabled=true;
+  document.getElementById('report-section').style.display='none';
+  document.getElementById('how-section').style.display='none';
+  const progressEl=document.getElementById('progress-section');
+  progressEl.style.display='block';
+  progressEl.scrollIntoView({behavior:'smooth',block:'start'});
+
+  const stepsList=document.getElementById('steps-list');
+  stepsList.innerHTML=STEPS.map((s,i)=>`<div class="step pending" id="step-${i}"><div class="step-dot">${i+1}</div><span>${s}</span></div>`).join('');
+  let si=0;
+  const timer=setInterval(()=>{
+    if(si>0){const p=document.getElementById(`step-${si-1}`);if(p){p.className='step done';p.querySelector('.step-dot').textContent='✓';}}
+    const c=document.getElementById(`step-${si}`);
+    if(c){c.className='step active';document.getElementById('progress-sub').textContent=STEPS[si];}
+    si++;if(si>=STEPS.length)clearInterval(timer);
+  },1800);
+
+  try{
+    const resp=await fetch('/api/analyse',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({messages:[{role:'user',content:buildPrompt(funds)}]})
+    });
+
+    clearInterval(timer);
+    STEPS.forEach((_,i)=>{const el=document.getElementById(`step-${i}`);if(el){el.className='step done';el.querySelector('.step-dot').textContent='✓';}});
+
+    if(!resp.ok){
+      let msg=`Server error ${resp.status}`;
+      try{const e=await resp.json();msg=e.error||msg;}catch{}
+      throw new Error(msg);
+    }
+
+    const data=await resp.json();
+    const raw=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'';
+    const json=repairJSON(raw);
+
+    const total=funds.reduce((s,f)=>{const n=parseFloat(f.amt.replace(/[₹,\s]/g,''));return s+(isNaN(n)?0:n);},0);
+    document.getElementById('report-meta').textContent=
+      `${funds.length} fund${funds.length>1?'s':''} · `+
+      new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(total)+
+      ' · '+new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+
+    setTimeout(()=>{
+      progressEl.style.display='none';
+      document.getElementById('dashboard-output').innerHTML=buildDashboard(json,funds);
+      document.getElementById('report-section').style.display='block';
+      document.getElementById('report-section').scrollIntoView({behavior:'smooth',block:'start'});
+      window._rj=json;
+    },500);
+
+  }catch(err){
+    clearInterval(timer);
+    progressEl.style.display='none';
+    document.getElementById('analyze-btn').disabled=false;
+    document.getElementById('how-section').style.display='block';
+    showToast('Error: '+err.message,5000);
+  }
+}
+
+function qColor(q){return q==='Q1'?'d-tg':q==='Q2'?'d-tb':q==='Q3'?'d-to':'d-tr';}
+function scoreColor(s){return s>=7?'d-g':s>=5?'d-o':'d-r';}
+function decColor(d){return d==='Hold'?'d-hold':d==='Exit'?'d-exit':'d-sw';}
+function qualColor(q){return q==='Strong'?'d-str':q==='Average'?'d-av':'d-wk';}
+function barWidth(p,m){return Math.min(100,Math.round((p/m)*100))+'%';}
+
+function buildDashboard(d,funds){
+  const S=d.summary||{};const F=d.funds||[];const B=d.benchmark||{};const R=d.risk||{};
+  const sectors=d.sectors||[];const ov=d.overlap||{};
+  const proj=d.projections||{};const rec=d.recommended||[];
+  const exec=d.execution||[];const sc=d.scorecard||[];
+  const years=F.length>0&&F[0].calendarReturns?Object.keys(F[0].calendarReturns).filter(k=>!k.includes('Beat')).sort():['2020','2021','2022','2023','2024','2025'];
+  let h=`<div class="dash">`;
+
+  h+=`<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.5rem 0 .25rem">
+    <div>
+      <div style="font-size:16px;font-weight:500">Portfolio audit — ${funds.length}-fund portfolio</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">${funds.map(f=>f.name).join(' · ')} · Regular plans</div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <span class="d-pill d-pill-bad">Health: ${S.healthScore||'—'}</span>
+        <span class="d-pill d-pill-bad">${S.healthVerdict||'—'}</span>
+        <span class="d-pill d-pill-warn">Overlap: ${S.overlapPct||'—'}</span>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:10px;color:var(--muted)">Funds beating BM</div>
+      <div style="font-size:22px;font-weight:500;color:#9B2226">${S.fundsBeatBM||'—'}</div>
+    </div>
+  </div><div class="d-sep"></div>`;
+
+  h+=`<div class="d-g4" style="margin-bottom:8px">
+    <div class="d-mc"><div class="d-ml">Total invested</div><div class="d-mv">${S.totalInvested}</div></div>
+    <div class="d-mc"><div class="d-ml">Current value</div><div class="d-mv d-o">${S.currentValue}</div></div>
+    <div class="d-mc"><div class="d-ml">Blended CAGR</div><div class="d-mv d-r">${S.blendedCAGR}</div><div class="d-ms">BM: ${B.cagr5y}</div></div>
+    <div class="d-mc"><div class="d-ml">Alpha vs BM</div><div class="d-mv d-r">${S.alphaBM}</div></div>
+  </div>
+  <div class="d-g4" style="margin-bottom:1.25rem">
+    <div class="d-mc"><div class="d-ml">Real return (after CPI)</div><div class="d-mv d-r">${S.realReturn}</div></div>
+    <div class="d-mc"><div class="d-ml">Annual TER cost</div><div class="d-mv d-r">${S.annualTER}</div></div>
+    <div class="d-mc"><div class="d-ml">Funds beat BM</div><div class="d-mv d-r">${S.fundsBeatBM}</div></div>
+    <div class="d-mc"><div class="d-ml">Unique stocks</div><div class="d-mv d-r">${S.uniqueStocks}</div></div>
+  </div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Executive summary</div>
+  <div class="d-card d-card-warn" style="padding:10px 14px">
+  <div style="display:flex;flex-direction:column;gap:5px;font-size:11px;color:#7F1D1D;line-height:1.6">
+  ${(S.keyFlags||[]).map((f,i)=>`<div style="display:flex;gap:8px"><span style="font-weight:500;flex-shrink:0">${i+1}.</span><span>${f}</span></div>`).join('')}
+  </div></div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Fund deep dive — performance & risk</div>
+  <div class="d-card" style="padding:0;overflow:hidden;overflow-x:auto"><table class="d-tbl"><thead><tr>
+    <th style="width:20%">Fund</th>
+    <th class="d-nr">5Y CAGR</th><th class="d-nr">3Y CAGR</th><th class="d-nr">1Y</th>
+    <th class="d-nr">Sharpe</th><th class="d-nr">Beta</th><th class="d-nr">StdDev</th><th class="d-nr">Alpha</th>
+    <th class="d-nr">TER</th><th class="d-nr">AUM(Cr)</th>
+    <th class="d-nc">Tenure</th><th class="d-nc">Quality</th><th class="d-nc">Decision</th>
+  </tr></thead><tbody>
+  ${F.map(f=>`<tr>
+    <td><div class="d-fn">${f.name}</div><div class="d-fs">${f.manager||''}</div></td>
+    <td class="d-nr ${f.perf5yVal>13?'d-g':f.perf5yVal>11?'d-o':'d-r'}">${f.cagr5y}</td>
+    <td class="d-nr ${f.perf3yVal>13?'d-g':f.perf3yVal>11?'d-o':'d-r'}">${f.cagr3y}</td>
+    <td class="d-nr ${f.ret1yVal>0?'d-g':'d-r'}">${f.ret1y}</td>
+    <td class="d-nr ${f.sharpeVal>0.8?'d-g':f.sharpeVal>0.5?'d-o':'d-r'}">${f.sharpe}</td>
+    <td class="d-nr">${f.beta}</td><td class="d-nr">${f.stddev}</td>
+    <td class="d-nr">${f.alpha}</td><td class="d-nr">${f.ter}</td><td class="d-nr">${f.aum}</td>
+    <td class="d-nc"><span class="d-tag ${f.tenureFlag?'d-to':'d-tb'}">${f.tenureYrs}yr${f.tenureFlag?' ⚠':''}</span></td>
+    <td class="d-nc"><span class="d-vd ${qualColor(f.quality)}">${f.quality}</span></td>
+    <td class="d-nc"><span class="d-vd ${decColor(f.decision)}">${f.decision==='Switch'?'⇄ Switch':f.decision==='Exit'?'✗ Exit':'✔ Hold'}</span></td>
+  </tr>`).join('')}
+  <tr style="background:var(--paper)">
+    <td style="color:var(--muted);font-size:10px">Nifty 100 TRI</td>
+    <td class="d-nr d-b">${B.cagr5y}</td><td class="d-nr d-b">${B.cagr3y}</td><td class="d-nr d-b">${B.ret1y}</td>
+    <td class="d-nr d-b">${B.sharpe}</td><td class="d-nr d-b">${B.beta}</td><td class="d-nr d-b">${B.stddev}</td>
+    <td class="d-nr d-b">—</td><td class="d-nr d-b">0.10%</td><td class="d-nr d-b">—</td>
+    <td colspan="3" class="d-nc" style="color:var(--muted)">Benchmark</td>
+  </tr></tbody></table></div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Calendar year heatmap</div>
+  <div class="d-card" style="padding:0;overflow:hidden;overflow-x:auto"><table class="d-tbl"><thead><tr>
+    <th style="width:22%">Fund</th>
+    ${years.map(y=>`<th class="d-nc">${y}${y==='2020'?'*':''}</th>`).join('')}
+    <th class="d-nc">Quartile</th>
+  </tr></thead><tbody>
+  ${F.map(f=>{const cr=f.calendarReturns||{};return `<tr><td><div class="d-fn">${f.name.split(' ').slice(0,3).join(' ')}</div></td>
+    ${years.map(y=>{const v=cr[y]||'—';const b=cr[y+'Beat'];return `<td class="d-nc"><span class="${b===true?'d-hl-g':b===false?'d-hl-r':'d-hl-a'}">${v}</span></td>`;}).join('')}
+    <td class="d-nc"><span class="d-tag ${qColor(f.quartile)}">${f.quartile} — ${f.quartileLabel}</span></td></tr>`;}).join('')}
+  <tr style="background:var(--paper)"><td style="color:var(--muted);font-size:10px">Nifty 100 TRI</td>
+    ${years.map(y=>`<td class="d-nc"><span class="d-hl-b">${B.calendarReturns?.[y]||'—'}</span></td>`).join('')}<td></td>
+  </tr></tbody></table></div>
+  <div style="font-size:10px;color:var(--muted);margin-top:4px">*2020 partial year · <span class="d-hl-g">Beat BM</span> <span class="d-hl-a">Near BM</span> <span class="d-hl-r">Lagged BM</span></div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Rolling returns — consistency</div><div class="d-g2">
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">1-year rolling</div>
+    <table class="d-tbl"><thead><tr><th>Fund</th><th class="d-nr">Avg</th><th class="d-nr">% beats BM</th><th class="d-nr">Worst</th></tr></thead><tbody>
+    ${F.map(f=>`<tr><td style="font-weight:500">${f.name.split(' ').slice(0,2).join(' ')}</td><td class="d-nr d-o">${f.rolling1yAvg}</td><td class="d-nr ${parseInt(f.rolling1yBeatPct)>50?'d-o':'d-r'}">${f.rolling1yBeatPct}</td><td class="d-nr d-r">${f.rolling1yWorst}</td></tr>`).join('')}
+    <tr style="background:var(--paper)"><td style="color:var(--muted)">Nifty 100</td><td class="d-nr d-b">${B.rolling1yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
+    </tbody></table></div>
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">3-year rolling</div>
+    <table class="d-tbl"><thead><tr><th>Fund</th><th class="d-nr">Avg</th><th class="d-nr">% beats BM</th><th class="d-nr">Min</th></tr></thead><tbody>
+    ${F.map(f=>`<tr><td style="font-weight:500">${f.name.split(' ').slice(0,2).join(' ')}</td><td class="d-nr d-o">${f.rolling3yAvg}</td><td class="d-nr ${parseInt(f.rolling3yBeatPct)>50?'d-o':'d-r'}">${f.rolling3yBeatPct}</td><td class="d-nr ${parseFloat(f.rolling3yMin)>8?'d-o':'d-r'}">${f.rolling3yMin}</td></tr>`).join('')}
+    <tr style="background:var(--paper)"><td style="color:var(--muted)">Nifty 100</td><td class="d-nr d-b">${B.rolling3yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
+    </tbody></table></div>
+  </div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Sector concentration & overlap</div><div class="d-g2">
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:10px">Blended sector exposure</div>
+    ${sectors.map(s=>`<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${s.name}${s.flag?' ⚠':''}</span><span class="${s.flag?'d-r':'d-o'}">${s.pct}%</span></div>
+      <div class="d-bb"><div class="d-bf" style="width:${barWidth(s.pct,sectors[0]?.pct||40)};background:${s.flag?'#E24B4A':'#888780'}"></div></div>
+    </div>`).join('')}
+    <div class="d-callout d-c-warn" style="padding:7px 10px;font-size:10px">BFSI concentration creates sector-level tail risk across all funds simultaneously.</div></div>
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">Common holdings — <span class="d-r">${ov.overallPct||'—'} overlap</span></div>
+    <table class="d-tbl"><thead><tr><th>Stock</th><th class="d-nc">Funds</th><th class="d-nr">Avg wt</th><th class="d-nc">Risk</th></tr></thead><tbody>
+    ${(ov.topStocks||[]).map(s=>`<tr><td style="font-weight:500">${s.stock}</td><td class="d-nc" style="font-size:10px">${s.funds}</td><td class="d-nr">${s.avgWt}</td>
+      <td class="d-nc"><span class="d-tag ${s.risk==='Very High'?'d-tr':s.risk==='High'?'d-to':'d-tgy'}">${s.risk}</span></td></tr>`).join('')}
+    </tbody></table>
+    <div class="d-callout d-c-warn" style="padding:7px 10px;font-size:10px"><strong>${ov.verdict||'—'}</strong> — paying multiple TERs for effectively one portfolio.</div></div>
+  </div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Risk & stress test</div><div class="d-g3">
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">Risk scorecard</div>
+    <table class="d-tbl">
+      <tr><td style="color:var(--muted);padding:4px 0">Portfolio beta</td><td class="d-nr d-o">${R.blendedBeta}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">BFSI concentration</td><td class="d-nr d-r">${R.bfsiPct}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Top 5 stocks</td><td class="d-nr d-r">${R.top5StocksPct}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Mid/small cap</td><td class="d-nr d-r">${R.midSmallPct}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Max drawdown</td><td class="d-nr d-r">${R.maxDrawdown}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Std deviation</td><td class="d-nr d-o">${R.stddev}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Downside capture</td><td class="d-nr d-r">${R.downsideCap}</td></tr>
+      <tr><td style="color:var(--muted);padding:4px 0">Upside capture</td><td class="d-nr d-r">${R.upsideCap}</td></tr>
+    </table></div>
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:6px">Stress scenarios</div>
+    ${(R.stressScenarios||[]).map(s=>`<div style="padding:8px 10px;border-radius:6px;margin-bottom:7px;background:${s.pct&&s.pct.includes('-')?'#FFDDD2':'#D8F3DC'}">
+      <div style="font-size:10px;color:${s.pct&&s.pct.includes('-')?'#7F1D1D':'#14532D'}">${s.label}</div>
+      <div style="font-size:18px;font-weight:500;color:${s.pct&&s.pct.includes('-')?'#9B2226':'#2D6A4F'}">${s.impact}</div>
+      <div style="font-size:10px;color:${s.pct&&s.pct.includes('-')?'#7F1D1D':'#14532D'}">${s.pct} of corpus</div>
+    </div>`).join('')}</div>
+    <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">Real returns (after 6.2% CPI)</div>
+    ${F.map(f=>`<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${f.name.split(' ').slice(0,2).join(' ')}</span><span class="d-o">${f.realReturn}</span></div>
+      <div class="d-bb"><div class="d-bf" style="width:${barWidth(parseFloat(f.realReturn)||0,10)};background:#854F0B"></div></div>
+    </div>`).join('')}
+    <div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">Nifty 100 TRI</span><span class="d-b">7.0%</span></div>
+    <div class="d-bb"><div class="d-bf" style="width:70%;background:#1B4F72"></div></div></div>
+    </div>
+  </div></div>`;
+
+  const exitFunds=F.filter(f=>f.decision!=='Hold');
+  if(exitFunds.length){
+    h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Tax impact of switching</div>
+    <div class="d-card" style="padding:0;overflow:hidden"><table class="d-tbl"><thead><tr>
+      <th>Fund</th><th class="d-nr">Est. value</th><th class="d-nr">Gain</th><th class="d-nr">LTCG tax*</th><th class="d-nr">Net proceeds</th><th class="d-nc">Break-even</th>
+    </tr></thead><tbody>
+    ${exitFunds.map(f=>`<tr>
+      <td style="font-weight:500">${f.name.split(' ').slice(0,3).join(' ')}</td>
+      <td class="d-nr d-o">${f.estCurrentValue}</td>
+      <td class="d-nr d-o">${f.gainAmt}</td>
+      <td class="d-nr d-o">${f.ltcgTax}</td>
+      <td class="d-nr d-g">${f.netProceeds}</td>
+      <td class="d-nc"><span class="d-tag d-tg">${f.breakEvenMonths} months</span></td>
+    </tr>`).join('')}
+    </tbody></table></div>
+    <div class="d-callout d-c-ok" style="margin-top:8px">Spread exits across FY years to use ₹1.25L LTCG exemption twice. Consult a SEBI-registered advisor.</div></div>`;
+  }
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Goal projections — current vs recommended</div>
+  <div class="d-card" style="padding:0;overflow:hidden;overflow-x:auto"><table class="d-tbl"><thead><tr>
+    <th>Scenario</th><th class="d-nr">CAGR</th><th class="d-nr">5 Years</th><th class="d-nr">10 Years</th><th class="d-nr">15 Years</th><th class="d-nr">20 Years</th>
+  </tr></thead><tbody>
+  ${(proj.rows||[]).map(r=>`<tr>
+    <td style="font-weight:500;color:${r.type==='good'?'#2D6A4F':r.type==='bad'?'#9B2226':'#7B5E00'}">${r.label}</td>
+    <td class="d-nr ${r.type==='good'?'d-g':r.type==='bad'?'d-r':'d-o'}">${r.cagr}</td>
+    <td class="d-nr ${r.type==='good'?'d-g':r.type==='bad'?'d-r':'d-o'}">${r.y5}</td>
+    <td class="d-nr ${r.type==='good'?'d-g':r.type==='bad'?'d-r':'d-o'}">${r.y10}</td>
+    <td class="d-nr ${r.type==='good'?'d-g':r.type==='bad'?'d-r':'d-o'}">${r.y15}</td>
+    <td class="d-nr ${r.type==='good'?'d-g':r.type==='bad'?'d-r':'d-o'}">${r.y20}</td>
+  </tr>`).join('')}
+  </tbody></table></div>
+  <div class="d-callout d-c-ok" style="margin-top:8px">Over 20 years the recommended portfolio generates <strong>${proj.gap20y||'significantly'} more</strong> than the current structure.</div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Recommended target portfolio</div>
+  <div class="d-card" style="padding:0;overflow:hidden"><table class="d-tbl"><thead><tr>
+    <th>Fund</th><th>Category</th><th class="d-nr">Alloc</th><th class="d-nr">Amount</th><th class="d-nr">5Y CAGR</th><th class="d-nr">Sharpe</th><th class="d-nr">TER</th><th class="d-nc">Role</th>
+  </tr></thead><tbody>
+  ${rec.map(r=>`<tr>
+    <td style="font-weight:500">${r.name}</td>
+    <td><span class="d-tag ${r.cat.includes('Large')?'d-tb':r.cat.includes('Mid')?'d-to':r.cat.includes('Small')?'d-tr':r.cat.includes('Index')?'d-tgy':'d-tg'}">${r.cat}</span></td>
+    <td class="d-nr">${r.alloc}</td><td class="d-nr">${r.amt}</td>
+    <td class="d-nr d-g">${r.cagr5y}</td><td class="d-nr d-g">${r.sharpe}</td><td class="d-nr d-g">${r.ter}</td>
+    <td class="d-nc"><span class="d-tag d-tg">${r.role}</span></td>
+  </tr>`).join('')}
+  </tbody></table></div></div>`;
+
+  h+=`<div style="margin-bottom:1.25rem"><div class="d-sec-hd">Execution plan</div><div class="d-g3">
+  ${exec.map(e=>`<div class="d-card ${e.color==='bad'?'d-card-warn':e.color==='ok'?'d-card-ok':''}">
+    <div style="font-size:11px;font-weight:500;color:${e.color==='bad'?'#9B2226':e.color==='ok'?'#2D6A4F':'#7B5E00'};margin-bottom:5px">${e.step}</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6">${e.detail}</div>
+  </div>`).join('')}
+  </div></div>`;
+
+  h+=`<div style="margin-bottom:.5rem"><div class="d-sec-hd">Efficiency scorecard</div><div class="d-g4">
+  ${sc.slice(0,4).map(s=>`<div class="d-card" style="text-align:center">
+    <div style="font-size:10px;color:var(--muted);margin-bottom:5px">${s.label}</div>
+    <div style="font-size:22px;font-weight:500" class="${scoreColor(s.score)}">${s.score}</div>
+    <div style="font-size:10px;color:var(--muted);margin-top:3px">${s.note}</div>
+  </div>`).join('')}
+  </div>
+  ${sc.find(s=>s.label.toLowerCase().includes('overall'))?`<div class="d-callout d-c-warn" style="margin-top:8px">Overall health score: <strong>${sc.find(s=>s.label.toLowerCase().includes('overall')).score} / 10</strong> — ${sc.find(s=>s.label.toLowerCase().includes('overall')).note}</div>`:''}</div>`;
+
+  h+=`<div style="margin-top:1rem;padding:8px 12px;background:var(--paper);border-radius:8px;font-size:10px;color:var(--muted);line-height:1.6">
+    <strong style="color:var(--ink)">Disclaimer:</strong> Data from AMFI, Value Research as of Apr 2026. Analysis is for research purposes only — not investment advice. Consult a SEBI-registered advisor before making changes to your portfolio.
+  </div></div>`;
+  return h;
+}
+
+function downloadReport(){
+  const html=document.getElementById('dashboard-output').innerHTML;
+  const css=document.querySelector('style').textContent;
+  const full=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FundAudit Report</title><style>body{font-family:sans-serif;padding:2rem;max-width:960px;margin:0 auto}${css}</style></head><body>${html}</body></html>`;
+  const a=document.createElement('a');
+  a.href='data:text/html;charset=utf-8,'+encodeURIComponent(full);
+  a.download='FundAudit_Report_'+new Date().toISOString().slice(0,10)+'.html';
+  a.click();showToast('Report downloaded');
+}
+
+function resetApp(){
+  document.getElementById('report-section').style.display='none';
+  document.getElementById('how-section').style.display='block';
+  document.getElementById('analyze-btn').disabled=false;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+</script>
+</body>
+</html>

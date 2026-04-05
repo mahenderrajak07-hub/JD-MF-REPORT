@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fundaudit
+    env: node
+    buildCommand: ""
+    startCommand: node server.js
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    plan: free
