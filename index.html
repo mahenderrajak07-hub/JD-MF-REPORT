@@ -250,7 +250,7 @@ function loadEx(k){const d=EX[k];const rows=document.getElementById('fund-rows')
 function getFunds(){return Array.from(document.querySelectorAll('.fund-row')).map(r=>({name:r.querySelector('.fund-name').value.trim(),amt:r.querySelector('.fund-amt').value.trim(),date:r.querySelector('.fund-date').value.trim()})).filter(f=>f.name&&f.amt);}
 function showToast(m,dur=3500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
 
-const STEPS=['Fetching live NAV & return data','Computing 1Y / 3Y / 5Y CAGR','Calculating rolling return windows','Analysing Sharpe, beta & risk metrics','Building stock overlap matrix','Running stress test scenarios','Computing real returns & tax impact','Generating goal projections','Designing rebalancing plan','Compiling visual audit report'];
+const STEPS=['Searching live data on Value Research & Moneycontrol','Fetching NAV, returns & expense ratios','Pulling Sharpe ratio, beta & risk metrics','Searching fund manager tenure data','Cross-checking AUM & peer rankings','Computing rolling return windows','Running stress test scenarios','Generating goal projections','Designing rebalancing plan','Compiling visual audit report'];
 
 function buildPrompt(funds){
   const lines=funds.map(f=>`${f.name}|${f.amt}|${f.date}`).join('\n');
@@ -305,13 +305,13 @@ async function runAnalysis(){
     const c=document.getElementById(`step-${si}`);
     if(c){c.className='step active';document.getElementById('progress-sub').textContent=STEPS[si];}
     si++;if(si>=STEPS.length)clearInterval(timer);
-  },1800);
+  },5000);
 
   try{
     const resp=await fetch('/api/analyse',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:[{role:'user',content:buildPrompt(funds)}]})
+      body:JSON.stringify({funds:funds})
     });
 
     clearInterval(timer);
