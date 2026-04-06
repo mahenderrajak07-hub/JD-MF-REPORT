@@ -212,22 +212,37 @@ async function getLiveFundData(fund) {
   const investAmt = parseFloat(fund.amt.replace(/[₹,\s]/g, '')) || 0;
   const fmt = v => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v);
 
-  // Search for fund
+  // Step 1: Search for fund scheme
   const scheme = await searchFund(fund.name);
   if (!scheme) return { fund, error: `"${fund.name}" not found in AMFI` };
 
-  // Fetch NAV history
-  console.log(`  [NAV] Fetching ${scheme.schemeCode}...`);
-  const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 20000);
-  if (r.status !== 200) return { fund, error: `NAV fetch failed (HTTP ${r.status})` };
+  // Step 2: Fetch NAV history (limit to 6 years for speed)
+  console.log(`  [NAV] Fetching ${scheme.schemeCode} - ${scheme.schemeName}`);
+  let navData, fundMeta;
 
-  const mfData = JSON.parse(r.body);
-  const navData = mfData.data; // newest first
+  try {
+    // Try with date limit first (faster - smaller response)
+    const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=01-01-2019`, 20000);
+    if (r.status === 200) {
+      const parsed = JSON.parse(r.body);
+      navData = parsed.data;
+      fundMeta = parsed.meta;
+    }
+  } catch(e) { /* fallback below */ }
+
+  // Fallback: fetch without date filter
+  if (!navData || navData.length < 10) {
+    const r2 = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 25000);
+    if (r2.status !== 200) return { fund, error: `NAV fetch failed HTTP ${r2.status}` };
+    const parsed2 = JSON.parse(r2.body);
+    navData = parsed2.data;
+    fundMeta = parsed2.meta;
+  }
 
   const latestNav = parseFloat(navData[0].nav);
   const latestDate = navData[0].date;
 
-  // Trailing returns
+  // Step 3: Compute trailing returns
   const nav1y = navAt(navData, yearsAgo(1));
   const nav3y = navAt(navData, yearsAgo(3));
   const nav5y = navAt(navData, yearsAgo(5));
@@ -235,7 +250,7 @@ async function getLiveFundData(fund) {
   const ret3y = cagr(nav3y, latestNav, 3);
   const ret5y = cagr(nav5y, latestNav, 5);
 
-  // Investment value
+  // Step 4: Investment tracking
   const investDate = parseNavDate(fund.date);
   const navOnInvest = investDate ? navAt(navData, investDate) : null;
   const yearsHeld = investDate ? (Date.now() - investDate) / (365.25 * 24 * 3600 * 1000) : null;
@@ -244,7 +259,7 @@ async function getLiveFundData(fund) {
   const absReturn = navOnInvest ? (((latestNav - navOnInvest) / navOnInvest) * 100).toFixed(2) : null;
   const gain = currentValue ? (currentValue - investAmt) : null;
 
-  // Calendar year returns
+  // Step 5: Calendar year returns
   const BM = { 2020: 15.2, 2021: 24.1, 2022: 4.8, 2023: 22.3, 2024: 12.8, 2025: 6.5 };
   const calReturns = {};
   for (const yr of [2020, 2021, 2022, 2023, 2024, 2025]) {
@@ -253,14 +268,13 @@ async function getLiveFundData(fund) {
     calReturns[`${yr}Beat`] = rv !== null ? parseFloat(rv) > BM[yr] : false;
   }
 
-  console.log(`  [✓] ${scheme.schemeName}`);
-  console.log(`      1Y:${ret1y}% 3Y:${ret3y}% 5Y:${ret5y}% | NAV:₹${latestNav} | Invested:₹${navOnInvest?.toFixed(2)}`);
+  console.log(`  [✓] 1Y:${ret1y}% 3Y:${ret3y}% 5Y:${ret5y}% NAV:₹${latestNav}`);
 
   return {
     fund, schemeCode: scheme.schemeCode,
     schemeName: scheme.schemeName,
-    fundHouse: mfData.meta.fund_house,
-    category: mfData.meta.scheme_category,
+    fundHouse: fundMeta?.fund_house,
+    category: fundMeta?.scheme_category,
     latestNav, latestDate, navOnInvest,
     ret1y, ret3y, ret5y, calReturns,
     investAmt, currentValue, investCAGR, absReturn, gain,
@@ -311,17 +325,19 @@ async function runAnalysis(funds) {
   const fmt = v => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v);
   const totalInvested = funds.reduce((s, f) => s + (parseFloat(f.amt.replace(/[₹,\s]/g, '')) || 0), 0);
 
-  console.log(`\n[Phase 1] Fetching AMFI data for ${funds.length} funds`);
-  const results = [];
-  for (const fund of funds) {
-    console.log(`  → ${fund.name}`);
-    try {
-      results.push(await getLiveFundData(fund));
-    } catch(e) {
-      console.error(`  ✗ ${e.message}`);
-      results.push({ fund, error: e.message });
-    }
-  }
+  console.log(`\n[Phase 1] Fetching AMFI data for ${funds.length} funds IN PARALLEL`);
+  // Fetch all funds simultaneously — much faster than sequential
+  const results = await Promise.all(
+    funds.map(async fund => {
+      console.log(`  → ${fund.name}`);
+      try {
+        return await getLiveFundData(fund);
+      } catch(e) {
+        console.error(`  ✗ ${fund.name}: ${e.message}`);
+        return { fund, error: e.message };
+      }
+    })
+  );
 
   const fetched = results.filter(r => !r.error && r.ret1y);
   console.log(`[Phase 1] Done: ${fetched.length}/${funds.length} fetched`);
