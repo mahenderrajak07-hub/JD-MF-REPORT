@@ -130,7 +130,6 @@ function generateQueries(fundName) {
 function pickBestScheme(schemes, userInput) {
   const input = userInput.toLowerCase();
 
-  // Score each scheme
   const scored = schemes.map(s => {
     const n = s.schemeName.toLowerCase();
     let score = 0;
@@ -139,24 +138,35 @@ function pickBestScheme(schemes, userInput) {
     if (n.includes('regular')) score += 25;
     if (n.includes('growth') || n.includes('- gr ') || n.endsWith('- gr')) score += 20;
 
-    // Penalise Direct, IDCW, dividend
+    // Penalise Direct, IDCW, dividend, institutional, bonus variants
     if (n.includes('direct')) score -= 40;
     if (n.includes('idcw') || n.includes('dividend') || n.includes('payout')) score -= 30;
     if (n.includes('bonus') || n.includes('weekly') || n.includes('monthly') || n.includes('quarterly')) score -= 20;
+    if (n.includes('institutional') || n.includes('- i -') || n.includes('- ii -')) score -= 50;
+    if (n.includes('series') || n.includes('fof') || n.includes('fund of fund')) score -= 30;
 
-    // Reward keyword matches from user input
-    const userWords = input.split(/\s+/).filter(w => w.length > 3 &&
-      !['fund', 'plan', 'option', 'regular', 'growth', 'direct'].includes(w));
+    // Reward keyword matches — but penalise EXTRA words not in user query
+    const userWords = input.split(/\s+/).filter(w => w.length > 2 &&
+      !['fund', 'plan', 'option', 'regular', 'growth', 'direct', 'india', 'the'].includes(w));
     for (const w of userWords) {
-      if (n.includes(w)) score += 10;
+      if (n.includes(w)) score += 15;
     }
+
+    // Penalise scheme names with extra category words not in user input
+    // e.g. user typed "large cap" but scheme has "large & mid cap"
+    if (!input.includes('mid') && n.includes('mid cap')) score -= 35;
+    if (!input.includes('small') && n.includes('small cap')) score -= 35;
+    if (!input.includes('flexi') && n.includes('flexi')) score -= 20;
+    if (!input.includes('multi') && n.includes('multi cap')) score -= 20;
+    if (!input.includes('balanced') && n.includes('balanced')) score -= 20;
+    if (!input.includes('hybrid') && n.includes('hybrid')) score -= 20;
 
     return { ...s, score };
   });
 
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0];
-  return best && best.score > 0 ? best : schemes[0]; // fallback to first
+  return best && best.score > 0 ? best : null;
 }
 
 // ── NAV COMPUTATION ────────────────────────────────────────────────────────
@@ -220,24 +230,13 @@ async function getLiveFundData(fund) {
   console.log(`  [NAV] Fetching ${scheme.schemeCode} - ${scheme.schemeName}`);
   let navData, fundMeta;
 
-  try {
-    // Try with date limit first (faster - smaller response)
-    const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=01-01-2019`, 20000);
-    if (r.status === 200) {
-      const parsed = JSON.parse(r.body);
-      navData = parsed.data;
-      fundMeta = parsed.meta;
-    }
-  } catch(e) { /* fallback below */ }
-
-  // Fallback: fetch without date filter
-  if (!navData || navData.length < 10) {
-    const r2 = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 25000);
-    if (r2.status !== 200) return { fund, error: `NAV fetch failed HTTP ${r2.status}` };
-    const parsed2 = JSON.parse(r2.body);
-    navData = parsed2.data;
-    fundMeta = parsed2.meta;
-  }
+  // Fetch full NAV history
+  const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 25000);
+  if (r.status !== 200) return { fund, error: `NAV fetch failed HTTP ${r.status}` };
+  const mfParsed = JSON.parse(r.body);
+  navData = mfParsed.data;
+  fundMeta = mfParsed.meta;
+  if (!navData || navData.length < 5) return { fund, error: 'Insufficient NAV data' };
 
   const latestNav = parseFloat(navData[0].nav);
   const latestDate = navData[0].date;
@@ -462,7 +461,11 @@ const server = http.createServer((req, res) => {
 
       try {
         console.log(`[${new Date().toISOString()}] ${payload.funds.length} funds from ${ip}`);
-        const text = await runAnalysis(payload.funds);
+        // Hard 3-minute timeout so server never gets stuck
+        const text = await Promise.race([
+          runAnalysis(payload.funds),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Analysis took too long. Please retry — this sometimes happens on cold starts.')), 180000))
+        ]);
         sendJSON(res, 200, { content: [{ type: 'text', text }] });
       } catch(e) {
         console.error('Analysis failed:', e.message);
