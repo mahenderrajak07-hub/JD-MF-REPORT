@@ -247,8 +247,15 @@ async function fetchFundData(fund) {
   const scheme = await searchFund(fund.name);
   if (!scheme) return { fund, amt, error: 'Not found in AMFI' };
 
-  const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 22000);
-  if (r.status !== 200) return { fund, amt, error: `HTTP ${r.status}` };
+  // Try with date limit first (faster for large funds like Kotak Flexicap)
+  let r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=01-01-2019`, 15000)
+    .catch(() => null);
+  let usedFullHistory = false;
+  if (!r || r.status !== 200 || (JSON.parse(r?.body||'{"data":[]}').data?.length||0) < 50) {
+    r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}`, 20000);
+    usedFullHistory = true;
+  }
+  if (!r || r.status !== 200) return { fund, amt, error: `HTTP ${r?.status||'timeout'}` };
 
   const mf = JSON.parse(r.body);
   const nav = mf.data;
@@ -271,10 +278,21 @@ async function fetchFundData(fund) {
 
   const BM = {2020:15.2,2021:24.1,2022:4.8,2023:22.3,2024:12.8,2025:6.5};
   const cal = {};
+  const isHybridFund = (mf.meta?.scheme_category||'').toLowerCase().includes('balanced') ||
+                       (mf.meta?.scheme_category||'').toLowerCase().includes('hybrid') ||
+                       (mf.meta?.scheme_category||'').toLowerCase().includes('multi asset');
+  const maxReasonableReturn = isHybridFund ? 50 : 80;
+  const minReasonableReturn = isHybridFund ? -30 : -50;
+
   for (const yr of [2020,2021,2022,2023,2024,2025]) {
     const s = navAt(nav, new Date(yr,0,3));
     const e = navAt(nav, new Date(yr,11,29));
-    const rv = (s&&e) ? ((e-s)/s*100) : null;
+    let rv = (s&&e) ? ((e-s)/s*100) : null;
+    // Sanity check: if return is unrealistic, mark as null (bad data)
+    if (rv !== null && (rv < minReasonableReturn || rv > maxReasonableReturn)) {
+      console.warn(`  [CAL SANITY] ${yr} return ${rv.toFixed(1)}% out of range for ${mf.meta?.scheme_name||'fund'} — marking N/A`);
+      rv = null;
+    }
     cal[yr] = rv;
     cal[yr+'Beat'] = rv!=null ? rv > BM[yr] : false;
   }
@@ -462,8 +480,13 @@ function buildReport(funds, results, knowledge) {
   };
 
   const totalInvested = results.reduce((s,r) => s + r.amt, 0);
-  const totalCurrent = results.reduce((s,r) => s + (r.currentValue||0), 0);
-  const hasAll = results.every(r => r.currentValue);
+  const successResults = results.filter(r => !r.error && r.currentValue);
+  const totalCurrent = successResults.reduce((s,r) => s + r.currentValue, 0);
+  // Show partial value if at least 50% of funds fetched successfully
+  const hasAll = successResults.length >= Math.ceil(results.length * 0.5);
+  const partialNote = successResults.length < results.length
+    ? ` (${successResults.length}/${results.length} funds — ${results.filter(r=>r.error).map(r=>r.fund.name.split(' ').slice(0,2).join(' ')).join(', ')} timed out)`
+    : '';
   const BM5Y = 13.2;
 
   const validR = results.filter(r => r.ret5y && r.amt);
@@ -471,7 +494,11 @@ function buildReport(funds, results, knowledge) {
   // Use primary category benchmark for portfolio-level alpha
   const primaryCat = results.find(r=>r.meta?.scheme_category)?.meta?.scheme_category || '';
   const portfolioBM = getBenchmark(primaryCat);
-  const alpha5 = blendedCAGR5 - portfolioBM.cagr5y;
+  // For mixed portfolios, show weighted alpha
+  const weightedBMcagr = successResults.length > 0
+    ? successResults.reduce((s,r) => s + ((r.benchmark?.cagr5y||portfolioBM.cagr5y) * r.amt), 0) / totalInvested
+    : portfolioBM.cagr5y;
+  const alpha5 = blendedCAGR5 - weightedBMcagr;
   const realReturn = blendedCAGR5 - 6.2;
   const beatCount5 = results.filter(r=>r.ret5y&&r.ret5y>BM5Y).length;
   const avgTER = kFunds.length ? kFunds.reduce((s,k)=>s+parseFloat(k.ter||'1.62'),0)/kFunds.length : 1.62;
