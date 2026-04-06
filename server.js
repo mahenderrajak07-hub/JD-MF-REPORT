@@ -60,25 +60,79 @@ function generateQueries(name) {
 
 function pickBest(schemes, userInput) {
   const input = userInput.toLowerCase();
+
+  // Hard-reject fund types clearly not matching user intent
+  const isDebt = input.includes('debt') || input.includes('bond') || input.includes('gilt') || input.includes('liquid') || input.includes('overnight') || input.includes('money market');
+  const isMid  = input.includes('mid cap') || input.includes('midcap');
+  const isSmall = input.includes('small cap') || input.includes('smallcap');
+  const isBalanced = input.includes('balanced') || input.includes('hybrid') || input.includes('advantage') || input.includes('dynamic asset');
+  const isElss = input.includes('elss') || input.includes('tax saver') || input.includes('tax saving');
+  const isFlexi = input.includes('flexi cap') || input.includes('flexicap');
+  const isMulti = input.includes('multi cap') || input.includes('multicap');
+  const isIndex = input.includes('index') || input.includes('nifty') || input.includes('sensex');
+
   const scored = schemes.map(s => {
     const n = s.schemeName.toLowerCase();
     let score = 0;
+
+    // Prefer Regular Growth
     if (n.includes('regular')) score += 25;
-    if (n.includes('growth')) score += 20;
+    if (n.includes('growth') && !n.includes('aggressive growth')) score += 20;
+
+    // Hard penalties for wrong plans
     if (n.includes('direct')) score -= 40;
-    if (n.includes('idcw') || n.includes('dividend')) score -= 30;
-    if (n.includes('institutional') || n.includes('- i -')) score -= 50;
-    if (!input.includes('mid') && n.includes('mid cap')) score -= 35;
-    if (!input.includes('small') && n.includes('small cap')) score -= 35;
-    if (!input.includes('liquid') && n.includes('liquid')) score -= 40;
-    if (!input.includes('debt') && !input.includes('bond') && !input.includes('psu') &&
-        (n.includes(' debt') || n.includes('bond') || n.includes('banking and psu'))) score -= 40;
-    const words = input.split(/\s+/).filter(w => w.length > 3 && !['fund','plan','option','regular','growth'].includes(w));
-    for (const w of words) { if (n.includes(w)) score += 12; }
+    if (n.includes('idcw') || n.includes('dividend') || n.includes('payout')) score -= 35;
+    if (n.includes('institutional') || n.includes('- i -') || n.includes('- ii -')) score -= 60;
+    if (n.includes('bonus')) score -= 30;
+
+    // Hard-reject completely wrong fund types (unless user asked for them)
+    if (!isDebt) {
+      if (n.includes('overnight')) score -= 200;       // CRITICAL: overnight funds have crazy NAV
+      if (n.includes('liquid')) score -= 200;          // CRITICAL: liquid fund NAV ~2000+
+      if (n.includes('money market')) score -= 200;
+      if (n.includes('ultra short')) score -= 150;
+      if (n.includes('low duration')) score -= 100;
+      if (n.includes('gilt')) score -= 100;
+      if (n.includes('credit risk')) score -= 100;
+      if (n.includes('banking and psu bond')) score -= 100;
+      if (n.includes(' debt ') || n.includes('-debt-')) score -= 100;
+    }
+    if (!isBalanced) {
+      if (n.includes('balanced advantage') && !input.includes('advantage')) score -= 50;
+    }
+    if (!isMid && n.includes('mid cap')) score -= 35;
+    if (!isSmall && n.includes('small cap')) score -= 35;
+    if (!isFlexi && n.includes('flexi cap')) score -= 20;
+    if (!isMulti && n.includes('multi cap') && !isFlexi) score -= 20;
+    if (!isElss && (n.includes('elss') || n.includes('tax saver'))) score -= 30;
+
+    // Reward keyword matches from user input
+    const words = input.split(/\s+/).filter(w => w.length > 3 &&
+      !['fund','plan','option','regular','growth','direct','india','mutual'].includes(w));
+    for (const w of words) {
+      if (n.includes(w)) score += 15;
+    }
+
     return { ...s, score };
   });
+
   scored.sort((a, b) => b.score - a.score);
-  return scored[0]?.score > 0 ? scored[0] : null;
+  const best = scored[0];
+  if (!best || best.score <= 0) return null;
+
+  // Final sanity check: if score is marginal, ensure it's not an obviously wrong type
+  const bn = best.schemeName.toLowerCase();
+  if (!isDebt && (bn.includes('overnight') || bn.includes('liquid') || bn.includes('money market'))) {
+    console.warn(`  [WARN] Rejected wrong fund type: ${best.schemeName}`);
+    // Try next best that's not debt
+    const nextBest = scored.find(s => {
+      const sn = s.schemeName.toLowerCase();
+      return s !== best && !sn.includes('overnight') && !sn.includes('liquid') &&
+             !sn.includes('money market') && !sn.includes('direct') && s.score > 0;
+    });
+    return nextBest || null;
+  }
+  return best;
 }
 
 async function searchFund(name) {
@@ -191,7 +245,8 @@ Return this exact structure with REAL data for each fund:
       "stddev": "14.2%",
       "alpha": "+2.5%",
       "ter": "1.51%",  // REGULAR PLAN TER — e.g. 1.51% NOT 0.69% (direct)
-      "aum": "41,764",
+      "riskCategory": "Very High Risk",  // SEBI risk label: Very High/High/Moderately High/Moderate/Low to Moderate/Low
+      "riskCategory": "Very High Risk",
       "quality": "Strong",
       "decision": "Hold",
       "quartile": "Q1",
@@ -324,7 +379,7 @@ function buildReport(funds, results, knowledge) {
       name:r.fund.name, manager:k.manager||'See factsheet', tenureYrs:k.tenureYrs||3, tenureFlag:k.tenureFlag||false,
       cagr5y:r.ret5y!=null?r.ret5y.toFixed(2)+'%':'N/A', cagr3y:r.ret3y!=null?r.ret3y.toFixed(2)+'%':'N/A', ret1y:r.ret1y!=null?r.ret1y.toFixed(2)+'%':'N/A',
       sharpe:k.sharpe||(r.ret5y>14?'0.80':r.ret5y>12?'0.65':'0.50'), beta:k.beta||'0.98', stddev:k.stddev||'14.0%',
-      alpha:alpha!=null?(alpha>=0?'+':'')+alpha.toFixed(2)+'%':'N/A', ter:k.ter||'1.62%', aum:k.aum||'N/A',
+      alpha:alpha!=null?(alpha>=0?'+':'')+alpha.toFixed(2)+'%':'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||'Very High Risk',
       quality, decision,
       perf5yVal:r.ret5y||0, perf3yVal:r.ret3y||0, ret1yVal:r.ret1y||0, sharpeVal:parseFloat(k.sharpe)||0.65,
       calendarReturns:{'2020':fmtC(c[2020]),'2020Beat':!!c['2020Beat'],'2021':fmtC(c[2021]),'2021Beat':!!c['2021Beat'],'2022':fmtC(c[2022]),'2022Beat':!!c['2022Beat'],'2023':fmtC(c[2023]),'2023Beat':!!c['2023Beat'],'2024':fmtC(c[2024]),'2024Beat':!!c['2024Beat'],'2025':fmtC(c[2025]),'2025Beat':!!c['2025Beat']},
