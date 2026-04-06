@@ -214,6 +214,53 @@ async function fetchFundData(fund) {
     cal[yr+'Beat'] = rv!=null ? rv > BM[yr] : false;
   }
 
+  // Sanity check: if returns are clearly impossible, it's likely a wrong fund match
+  const calVals = Object.entries(cal).filter(([k,v]) => !k.includes('Beat') && v !== null).map(([,v]) => parseFloat(v));
+  const hasInsaneReturn = calVals.some(v => v < -60 || v > 120);
+  const has5yNegative = ret5y !== null && ret5y < -15;
+  if (hasInsaneReturn || has5yNegative) {
+    console.warn(`  [SANITY FAIL] ${scheme.schemeName}: ret5y=${ret5y} calVals=[${calVals.join(',')}]`);
+    console.warn(`  [RETRY] Searching again with stricter query...`);
+    // Try alternative search with AMC name only
+    const amc = fund.name.split(' ').slice(0, 2).join(' ');
+    const altResult = await httpsGet('api.mfapi.in', `/mf/search?q=${encodeURIComponent(amc + ' balanced advantage regular growth')}`, 12000);
+    if (altResult.status === 200) {
+      const altSchemes = JSON.parse(altResult.body);
+      const altBest = pickBest(altSchemes, fund.name);
+      if (altBest && altBest.schemeCode !== scheme.schemeCode) {
+        console.log(`  [RETRY] Found alternative: ${altBest.schemeName} (${altBest.schemeCode})`);
+        const r2 = await httpsGet('api.mfapi.in', `/mf/${altBest.schemeCode}`, 25000);
+        if (r2.status === 200) {
+          const mf2 = JSON.parse(r2.body);
+          const nav2 = mf2.data;
+          const latestNav2 = parseFloat(nav2[0].nav);
+          const r1y2 = cagr(navAt(nav2, ago(1)), latestNav2, 1);
+          const r3y2 = cagr(navAt(nav2, ago(3)), latestNav2, 3);
+          const r5y2 = cagr(navAt(nav2, ago(5)), latestNav2, 5);
+          // Only use if saner
+          if (r5y2 !== null && r5y2 > -15) {
+            console.log(`  [RETRY OK] Using alt fund: 5Y=${r5y2.toFixed(2)}%`);
+            const navInvest2 = investDate ? navAt(nav2, investDate) : null;
+            const yearsHeld2 = investDate ? (Date.now()-investDate)/(365.25*86400000) : null;
+            const currentValue2 = navInvest2 ? amt * latestNav2 / navInvest2 : null;
+            const investCAGR2 = navInvest2 && yearsHeld2 ? cagr(navInvest2, latestNav2, yearsHeld2) : null;
+            const gain2 = currentValue2 ? currentValue2 - amt : null;
+            const cal2 = {};
+            const BM2 = {2020:15.2,2021:24.1,2022:4.8,2023:22.3,2024:12.8,2025:6.5};
+            for (const yr of [2020,2021,2022,2023,2024,2025]) {
+              const s2 = navAt(nav2, new Date(yr,0,3)), e2 = navAt(nav2, new Date(yr,11,29));
+              const rv2 = (s2&&e2) ? ((e2-s2)/s2*100) : null;
+              cal2[yr] = rv2; cal2[yr+'Beat'] = rv2!=null ? rv2 > BM2[yr] : false;
+            }
+            return { fund, amt, scheme:altBest, meta:mf2.meta, latestNav:latestNav2, latestDate:nav2[0].date, navInvest:navInvest2, ret1y:r1y2, ret3y:r3y2, ret5y:r5y2, cal:cal2, currentValue:currentValue2, investCAGR:investCAGR2, gain:gain2, yearsHeld:yearsHeld2 };
+          }
+        }
+      }
+    }
+    // If retry failed, return error so report shows N/A instead of wrong values
+    return { fund, amt, error: `NAV data unreliable for matched scheme (${scheme.schemeName}) — fund may have been restructured or renamed` };
+  }
+
   console.log(`  [NAV] ${scheme.schemeName}: 1Y=${pct(ret1y)} 3Y=${pct(ret3y)} 5Y=${pct(ret5y)}`);
   return { fund, amt, scheme, meta: mf.meta, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld };
 }
