@@ -379,21 +379,52 @@ Calendar returns vs Nifty 100 TRI:
     return `{"name":"${r.fund.name}","manager":"FILL","tenureYrs":0,"tenureFlag":false,"cagr5y":"${r.ret5y||'FILL'}%","cagr3y":"${r.ret3y||'FILL'}%","ret1y":"${r.ret1y||'FILL'}%","sharpe":"FILL","beta":"FILL","stddev":"FILL","alpha":"FILL","ter":"FILL","aum":"FILL","quality":"FILL","decision":"FILL","perf5yVal":${p5},"perf3yVal":${p3},"ret1yVal":${p1},"sharpeVal":0,"calendarReturns":{"2020":"${c[2020]||'X'}%","2020Beat":${!!c['2020Beat']},"2021":"${c[2021]||'X'}%","2021Beat":${!!c['2021Beat']},"2022":"${c[2022]||'X'}%","2022Beat":${!!c['2022Beat']},"2023":"${c[2023]||'X'}%","2023Beat":${!!c['2023Beat']},"2024":"${c[2024]||'X'}%","2024Beat":${!!c['2024Beat']},"2025":"${c[2025]||'X'}%","2025Beat":${!!c['2025Beat']}},"quartile":"FILL","quartileLabel":"FILL","rolling1yAvg":"FILL","rolling1yBeatPct":"FILL","rolling1yWorst":"FILL","rolling3yAvg":"FILL","rolling3yBeatPct":"FILL","rolling3yMin":"FILL","realReturn":"FILL","estCurrentValue":"${r.currentValueFmt||'FILL'}","gainAmt":"${r.gainFmt||'FILL'}","ltcgTax":"FILL","netProceeds":"FILL","breakEvenMonths":3}`;
   }).join(',');
 
-  console.log(`[Phase 2] Calling Claude for analysis`);
-  const prompt = `You are a CFA-level Indian mutual fund analyst. REAL AMFI NAV data is below — use these exact return figures.
+  function repairAndParse(raw) {
+    raw = (raw || '').replace(/```json|```/g, '').trim();
+    try { return JSON.parse(raw); } catch(e) {}
+    const stack = []; let inStr = false;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c === '"' && (i === 0 || raw[i-1] !== '\\')) inStr = !inStr;
+      if (!inStr) {
+        if (c === '{' || c === '[') stack.push(c === '{' ? '}' : ']');
+        else if ((c === '}' || c === ']') && stack.length) stack.pop();
+      }
+    }
+    try { return JSON.parse(raw + stack.reverse().join('')); } catch(e2) { return {}; }
+  }
 
-LIVE AMFI DATA:
+  // ── CALL 1: Fund metrics, summary, risk, sectors, overlap ──
+  console.log(`[Phase 2a] Claude — fund metrics`);
+  const p1 = `Indian MF analyst. REAL AMFI NAV data below. Return ONLY JSON, no markdown. Do NOT change pre-filled CAGRs.
+
+LIVE DATA:
 ${liveDataStr}
 
-Total invested: ${fmt(totalInvested)} | Current: ${hasAll ? fmt(totalCurrentValue) : 'per fund above'}
-Benchmark Nifty 100 TRI: 5Y=13.2% 3Y=14.0% 1Y=+0.8% | CPI=6.2% | LTCG=12.5% above ₹1.25L/FY
+Invested:${fmt(totalInvested)} Current:${hasAll?fmt(totalCurrentValue):'see above'} BM:Nifty100 5Y=13.2% 3Y=14.0% 1Y=+0.8%
 
-Return ONLY valid JSON. CAGRs and calendar returns are PRE-FILLED — do not change them. Fill FILL/CALC with real values.
+{"summary":{"totalInvested":"${fmt(totalInvested)}","currentValue":"${hasAll?fmt(totalCurrentValue):'CALC'}","blendedCAGR":"CALC","alphaBM":"CALC","realReturn":"CALC","annualTER":"CALC","fundsBeatBM":"X/${funds.length}","uniqueStocks":"~X","healthScore":"X/10","healthVerdict":"VERDICT","overlapPct":"X%","keyFlags":["F1","F2","F3","F4"]},"funds":[${fundsJSON}],"benchmark":{"cagr5y":"13.2%","cagr3y":"14.0%","ret1y":"+0.8%","sharpe":"0.95","beta":"1.00","stddev":"12.8%","rolling1yAvg":"13.8%","rolling3yAvg":"14.4%","calendarReturns":{"2020":"+15.2%","2021":"+24.1%","2022":"+4.8%","2023":"+22.3%","2024":"+12.8%","2025":"+6.5%"}},"risk":{"blendedBeta":"X","bfsiPct":"X%","top5StocksPct":"X%","midSmallPct":"X%","uniqueStocks":"~X","stddev":"X%","maxDrawdown":"~-X%","downsideCap":"~X%","upsideCap":"~X%","stressScenarios":[{"label":"Bull +15%","impact":"CALC","pct":"+X%"},{"label":"Flat 3Y","impact":"CALC","pct":"-X%"},{"label":"Correction -20%","impact":"CALC","pct":"-X%"},{"label":"Crash -30%","impact":"CALC","pct":"-X%"}]},"sectors":[{"name":"BFSI","pct":35,"flag":true},{"name":"IT","pct":14,"flag":false},{"name":"Energy","pct":11,"flag":false},{"name":"Industrials","pct":10,"flag":false},{"name":"Consumer","pct":9,"flag":false},{"name":"Others","pct":21,"flag":false}],"overlap":{"overallPct":"X%","verdict":"X","topStocks":[{"stock":"HDFC Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"ICICI Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"Reliance","funds":"X","avgWt":"X%","risk":"High"},{"stock":"Infosys","funds":"X","avgWt":"X%","risk":"Moderate"},{"stock":"L&T","funds":"X","avgWt":"X%","risk":"Moderate"}]}}`;
 
-{"summary":{"totalInvested":"${fmt(totalInvested)}","currentValue":"${hasAll ? fmt(totalCurrentValue) : 'CALC'}","blendedCAGR":"CALC","alphaBM":"CALC","realReturn":"CALC","annualTER":"CALC","fundsBeatBM":"X/${funds.length}","uniqueStocks":"~X","healthScore":"X/10","healthVerdict":"SHORT","overlapPct":"X%","keyFlags":["FINDING1","FINDING2","FINDING3","FINDING4"]},"funds":[${fundsJSON}],"benchmark":{"cagr5y":"13.2%","cagr3y":"14.0%","ret1y":"+0.8%","sharpe":"0.95","beta":"1.00","stddev":"12.8%","rolling1yAvg":"13.8%","rolling3yAvg":"14.4%","calendarReturns":{"2020":"+15.2%","2021":"+24.1%","2022":"+4.8%","2023":"+22.3%","2024":"+12.8%","2025":"+6.5%"}},"risk":{"blendedBeta":"X","bfsiPct":"X%","top5StocksPct":"X%","midSmallPct":"X%","uniqueStocks":"~X","stddev":"X%","maxDrawdown":"~-X%","downsideCap":"~X%","upsideCap":"~X%","stressScenarios":[{"label":"Bull +15%","impact":"CALC","pct":"+X%"},{"label":"Flat 3Y","impact":"CALC","pct":"-X%"},{"label":"Correction -20%","impact":"CALC","pct":"-X%"},{"label":"Crash -30%","impact":"CALC","pct":"-X%"}]},"sectors":[{"name":"BFSI","pct":35,"flag":true},{"name":"IT","pct":14,"flag":false},{"name":"Energy","pct":11,"flag":false},{"name":"Industrials","pct":10,"flag":false},{"name":"Consumer","pct":9,"flag":false},{"name":"Others","pct":21,"flag":false}],"overlap":{"overallPct":"X%","verdict":"X","topStocks":[{"stock":"HDFC Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"ICICI Bank","funds":"X","avgWt":"X%","risk":"Very High"},{"stock":"Reliance","funds":"X","avgWt":"X%","risk":"High"},{"stock":"Infosys","funds":"X","avgWt":"X%","risk":"Moderate"},{"stock":"L&T","funds":"X","avgWt":"X%","risk":"Moderate"}]},"projections":{"corpus":"${hasAll ? fmt(totalCurrentValue) : fmt(totalInvested*1.7)}","rows":[{"label":"Current portfolio","cagr":"CALC","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"bad"},{"label":"Nifty 100 Index","cagr":"13.2%","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"mid"},{"label":"Recommended portfolio","cagr":"~16%","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"good"}],"gap20y":"CALC"},"recommended":[{"name":"Nippon India Large Cap","cat":"Large Cap","alloc":"25%","amt":"CALC","cagr5y":"15.98%","sharpe":"0.89","ter":"0.65%","role":"Core anchor"},{"name":"HDFC Mid-Cap Opp.","cat":"Mid Cap","alloc":"30%","amt":"CALC","cagr5y":"18.7%","sharpe":"0.82","ter":"0.75%","role":"Growth kicker"},{"name":"PPFAS Flexicap","cat":"Flexi Cap","alloc":"25%","amt":"CALC","cagr5y":"17.3%","sharpe":"0.88","ter":"0.59%","role":"Intl diversifier"},{"name":"Motilal Nifty 50 Index","cat":"Index","alloc":"20%","amt":"CALC","cagr5y":"13.5%","sharpe":"0.94","ter":"0.11%","role":"Passive core"}],"execution":[{"step":"Step 1 — Now","color":"bad","detail":"Exit worst fund. Use ₹1.25L LTCG exemption this FY."},{"step":"Step 2 — April 2027","color":"warn","detail":"Exit next underperformer with fresh ₹1.25L exemption."},{"step":"Step 3 — Oct 2027+","color":"ok","detail":"Annual rebalance. Exit Q3/Q4 funds 2 years running."}],"scorecard":[{"label":"Performance consistency","score":X,"note":"AMFI beat rate"},{"label":"Diversification","score":X,"note":"Overlap and spread"},{"label":"Risk control","score":X,"note":"Downside capture"},{"label":"Cost efficiency","score":X,"note":"TER vs alpha"},{"label":"Overall health","score":X,"note":"Key action"}]}`
-  const response = await callAnthropic([{ role: 'user', content: prompt }]);
-  const text = (response.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-  console.log(`[Phase 2] Done. ${text.length} chars`);
+  const r1 = await callAnthropic([{ role:'user', content:p1 }]);
+  const t1 = (r1.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  console.log(`[Phase 2a] Done. ${t1.length} chars`);
+
+  // ── CALL 2: Projections, recommendations, execution, scorecard ──
+  console.log(`[Phase 2b] Claude — projections & plan`);
+  const corpus = hasAll ? fmt(totalCurrentValue) : fmt(totalInvested*1.7);
+  const p2 = `Indian MF analyst. Portfolio: ${funds.map(f=>f.name).join(', ')}. Corpus:${corpus} Invested:${fmt(totalInvested)} BM 5Y=13.2%. Return ONLY JSON, no markdown.
+
+{"projections":{"corpus":"${corpus}","rows":[{"label":"Current portfolio","cagr":"X%","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"bad"},{"label":"Nifty 100 Index","cagr":"13.2%","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"mid"},{"label":"Recommended portfolio","cagr":"~16%","y5":"CALC","y10":"CALC","y15":"CALC","y20":"CALC","type":"good"}],"gap20y":"CALC"},"recommended":[{"name":"Nippon India Large Cap","cat":"Large Cap","alloc":"25%","amt":"CALC","cagr5y":"15.98%","sharpe":"0.89","ter":"0.65%","role":"Core anchor"},{"name":"HDFC Mid-Cap Opp.","cat":"Mid Cap","alloc":"30%","amt":"CALC","cagr5y":"18.7%","sharpe":"0.82","ter":"0.75%","role":"Growth kicker"},{"name":"PPFAS Flexicap","cat":"Flexi Cap","alloc":"25%","amt":"CALC","cagr5y":"17.3%","sharpe":"0.88","ter":"0.59%","role":"Intl diversifier"},{"name":"Motilal Nifty 50 Index","cat":"Index","alloc":"20%","amt":"CALC","cagr5y":"13.5%","sharpe":"0.94","ter":"0.11%","role":"Passive core"}],"execution":[{"step":"Step 1 — Now","color":"bad","detail":"Exit worst fund. Use ₹1.25L LTCG exemption this FY."},{"step":"Step 2 — April 2027","color":"warn","detail":"Exit next underperformer with fresh ₹1.25L exemption."},{"step":"Step 3 — Oct 2027+","color":"ok","detail":"Annual rebalance. Exit Q3/Q4 funds 2 years running."}],"scorecard":[{"label":"Performance consistency","score":X,"note":"AMFI beat rate vs benchmark"},{"label":"Diversification","score":X,"note":"Overlap and category spread"},{"label":"Risk control","score":X,"note":"Downside vs upside capture"},{"label":"Cost efficiency","score":X,"note":"TER vs alpha delivered"},{"label":"Overall health","score":X,"note":"Key action required"}]}`;
+
+  const r2 = await callAnthropic([{ role:'user', content:p2 }]);
+  const t2 = (r2.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  console.log(`[Phase 2b] Done. ${t2.length} chars`);
+
+  const j1 = repairAndParse(t1);
+  const j2 = repairAndParse(t2);
+  const merged = Object.assign({}, j1, j2);
+  const text = JSON.stringify(merged);
+  console.log(`[Phase 2] Merged: ${text.length} chars`);
   return text;
 }
 
