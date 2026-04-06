@@ -418,7 +418,7 @@ function buildDashboard(d,funds){
     <th style="width:20%">Fund</th>
     <th class="d-nr">5Y CAGR</th><th class="d-nr">3Y CAGR</th><th class="d-nr">1Y</th>
     <th class="d-nr">Sharpe</th><th class="d-nr">Beta</th><th class="d-nr">StdDev</th><th class="d-nr">Alpha</th>
-    <th class="d-nr">TER</th><th class="d-nr">AUM(Cr)</th>
+    <th class="d-nr">TER</th><th class="d-nc">Risk</th>
     <th class="d-nc">Tenure</th><th class="d-nc">Quality</th><th class="d-nc">Decision</th>
   </tr></thead><tbody>
   ${F.map(f=>`<tr>
@@ -428,7 +428,7 @@ function buildDashboard(d,funds){
     <td class="d-nr ${f.ret1yVal>0?'d-g':'d-r'}">${f.ret1y}</td>
     <td class="d-nr ${f.sharpeVal>0.8?'d-g':f.sharpeVal>0.5?'d-o':'d-r'}">${f.sharpe}</td>
     <td class="d-nr">${f.beta}</td><td class="d-nr">${f.stddev}</td>
-    <td class="d-nr">${f.alpha}</td><td class="d-nr">${f.ter}</td><td class="d-nr">${f.aum}</td>
+    <td class="d-nr">${f.alpha}</td><td class="d-nr">${f.ter}</td><td class="d-nc"><span class="d-tag d-tb">${f.riskCategory||'—'}</span></td>
     <td class="d-nc"><span class="d-tag ${f.tenureFlag?'d-to':'d-tb'}">${f.tenureYrs}yr${f.tenureFlag?' ⚠':''}</span></td>
     <td class="d-nc"><span class="d-vd ${qualColor(f.quality)}">${f.quality}</span></td>
     <td class="d-nc"><span class="d-vd ${decColor(f.decision)}">${f.decision==='Switch'?'⇄ Switch':f.decision==='Exit'?'✗ Exit':'✔ Hold'}</span></td>
