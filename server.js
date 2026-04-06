@@ -285,7 +285,7 @@ async function getLiveFundData(fund) {
 
 // ── ANTHROPIC ──────────────────────────────────────────────────────────────
 async function callAnthropic(messages, retries = 3) {
-  const payload = { model: 'claude-sonnet-4-5', max_tokens: 7000, messages };
+  const payload = { model: 'claude-haiku-4-5-20251001', max_tokens: 4000, messages };
   const postData = JSON.stringify(payload);
   const opts = {
     hostname: 'api.anthropic.com', port: 443, path: '/v1/messages', method: 'POST',
@@ -344,31 +344,12 @@ async function runAnalysis(funds) {
   const totalCurrentValue = results.reduce((s, r) => s + (r.currentValue || 0), 0);
   const hasAll = results.every(r => r.currentValue);
 
-  // Build live data string
+  // Build compact live data string
   const liveDataStr = results.map(r => {
-    if (r.error) return `FUND: ${r.fund.name}\nStatus: NOT FOUND (${r.error})\nUse your best knowledge for this fund.\n`;
+    if (r.error) return `${r.fund.name}: NOT FOUND`;
     const c = r.calReturns;
-    const BM = { 2020: 15.2, 2021: 24.1, 2022: 4.8, 2023: 22.3, 2024: 12.8, 2025: 6.5 };
-    return `FUND: ${r.fund.name}
-AMFI Scheme: ${r.schemeName} (code: ${r.schemeCode})
-Category: ${r.category}
-Latest NAV: ₹${r.latestNav} as of ${r.latestDate}
-NAV on purchase date (${r.fund.date}): ₹${r.navOnInvest?.toFixed(4) || 'N/A'}
-Amount invested: ${r.investAmtFmt}
-Current value: ${r.currentValueFmt || 'N/A'}
-Absolute return: ${r.absReturn || 'N/A'}%
-CAGR since purchase: ${r.investCAGR || 'N/A'}%
-1Y trailing CAGR: ${r.ret1y || 'N/A'}%
-3Y trailing CAGR: ${r.ret3y || 'N/A'}%
-5Y trailing CAGR: ${r.ret5y || 'N/A'}%
-Calendar returns vs Nifty 100 TRI:
-  2020: ${c[2020]||'N/A'}% vs ${BM[2020]}% → ${c['2020Beat']?'BEAT':'LAGGED'}
-  2021: ${c[2021]||'N/A'}% vs ${BM[2021]}% → ${c['2021Beat']?'BEAT':'LAGGED'}
-  2022: ${c[2022]||'N/A'}% vs ${BM[2022]}% → ${c['2022Beat']?'BEAT':'LAGGED'}
-  2023: ${c[2023]||'N/A'}% vs ${BM[2023]}% → ${c['2023Beat']?'BEAT':'LAGGED'}
-  2024: ${c[2024]||'N/A'}% vs ${BM[2024]}% → ${c['2024Beat']?'BEAT':'LAGGED'}
-  2025: ${c[2025]||'N/A'}% vs ${BM[2025]}% → ${c['2025Beat']?'BEAT':'LAGGED'}`;
-  }).join('\n\n---\n\n');
+    return `${r.fund.name}|${r.category}|Invested:${r.investAmtFmt}|Current:${r.currentValueFmt||'N/A'}|CAGR:${r.investCAGR||'N/A'}%|1Y:${r.ret1y||'N/A'}%|3Y:${r.ret3y||'N/A'}%|5Y:${r.ret5y||'N/A'}%|Cal:2020=${c[2020]||'N/A'}%(${c['2020Beat']?'B':'L'}),2021=${c[2021]||'N/A'}%(${c['2021Beat']?'B':'L'}),2022=${c[2022]||'N/A'}%(${c['2022Beat']?'B':'L'}),2023=${c[2023]||'N/A'}%(${c['2023Beat']?'B':'L'}),2024=${c[2024]||'N/A'}%(${c['2024Beat']?'B':'L'}),2025=${c[2025]||'N/A'}%(${c['2025Beat']?'B':'L'})`;
+  }).join('\n');
 
   // Build pre-filled funds JSON
   const fundsJSON = results.map(r => {
