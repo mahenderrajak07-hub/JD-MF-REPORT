@@ -259,8 +259,8 @@ async function fetchFundData(fund) {
 
   // Fetch with date limit - prevents timeout for large funds like Kotak Flexicap
   // Try 5-year window first, fall back to 3-year if still slow
-  const startYear = new Date().getFullYear() - 6;
-  const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=01-01-${startYear}`, 30000);
+  const startYear = new Date().getFullYear() - 5; // 5 years only = less data = faster
+  const r = await httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=01-01-${startYear}`, 25000);
   if (r.status !== 200) return { fund, amt, error: `HTTP ${r.status}` };
 
   const mf = JSON.parse(r.body);
@@ -515,11 +515,11 @@ function buildReport(funds, results, knowledge) {
   const blendedCAGR5 = validR.length ? validR.reduce((s,r)=>s+(r.ret5y*r.amt),0)/validR.reduce((s,r)=>s+r.amt,0) : 0;
   // Use primary category benchmark for portfolio-level alpha
   const primaryCat = results.find(r=>r.meta?.scheme_category)?.meta?.scheme_category || '';
-  const portfolioBM = getBenchmark(primaryCat);
+  const portfolioBM = getBenchmark(primaryCat) || CATEGORY_BENCHMARKS['default'];
   // For mixed portfolios, show weighted alpha
-  const weightedBMcagr = successResults.length > 0
-    ? successResults.reduce((s,r) => s + ((r.benchmark?.cagr5y||portfolioBM.cagr5y) * r.amt), 0) / totalInvested
-    : portfolioBM.cagr5y;
+  const weightedBMcagr = successResults.length > 0 && totalInvested > 0
+    ? successResults.reduce((s,r) => s + ((r.benchmark?.cagr5y||portfolioBM?.cagr5y||13.2) * r.amt), 0) / totalInvested
+    : (portfolioBM?.cagr5y || 13.2);
   const alpha5 = blendedCAGR5 - weightedBMcagr;
   const realReturn = blendedCAGR5 - 6.2;
   // Beat count uses each fund's OWN benchmark (not portfolio-level)
@@ -607,27 +607,29 @@ function buildReport(funds, results, knowledge) {
   ];
 
   const recCAGR = 15.4;
-  const exitFunds = fundsArr.filter(f=>f.decision==='Exit').slice(0,2);
-  const exitNames = exitFunds.map(f=>f.name.split(' ').slice(0,2).join(' ')).join(' + ') || 'worst performers';
+  const exitFunds = (fundsArr||[]).filter(f=>f.decision==='Exit').slice(0,2);
+  const exitNames = exitFunds.map(f=>(f.name||'').split(' ').slice(0,2).join(' ')).join(' + ') || 'worst performers';
 
   return {
-    summary:{totalInvested:fmt(totalInvested),currentValue:hasAll?fmt(totalCurrent):'N/A',blendedCAGR:blendedCAGR5.toFixed(2)+'%',alphaBM:(alpha5>=0?'+':'')+alpha5.toFixed(2)+'%',realReturn:(realReturn>=0?'+':'')+realReturn.toFixed(2)+'%',annualTER:fmt(annualTERCost),fundsBeatBM:`${beatCount5}/${funds.length}`,uniqueStocks:`~${uniqueStocks}`,healthScore:healthScore+'/10',healthVerdict:knowledge?.healthVerdict||(alpha5>0?`Beating ${portfolioBM.name} — consolidate redundant positions`:`Underperforming ${portfolioBM.name} — restructure recommended`),overlapPct:overlapPct,keyFlags},
+    summary:{totalInvested:fmt(totalInvested),currentValue:hasAll?fmt(totalCurrent):'N/A',blendedCAGR:blendedCAGR5.toFixed(2)+'%',alphaBM:(alpha5>=0?'+':'')+alpha5.toFixed(2)+'%',realReturn:(realReturn>=0?'+':'')+realReturn.toFixed(2)+'%',annualTER:fmt(annualTERCost),fundsBeatBM:`${beatCount5}/${funds.length}`,uniqueStocks:`~${uniqueStocks}`,healthScore:healthScore+'/10',healthVerdict:knowledge?.healthVerdict||(alpha5>0?`Beating ${portfolioBM?.name||'benchmark'} — consolidate redundant positions`:`Underperforming ${portfolioBM?.name||'benchmark'} — restructure recommended`),overlapPct:overlapPct,keyFlags},
     funds:fundsArr,
     // Build per-category benchmark rows for all unique benchmarks in portfolio
     benchmarkRows: (()=>{
       const bmMap = {};
-      for (const r of results.filter(r=>!r.error && r.benchmark)) {
+      for (const r of results.filter(r=>!r.error && r.benchmark && r.benchmark.name)) {
         const bm = r.benchmark;
         if (!bmMap[bm.name]) bmMap[bm.name] = { ...bm, fundCount: 0 };
         bmMap[bm.name].fundCount++;
       }
-      return Object.values(bmMap);
+      const rows = Object.values(bmMap);
+      // Fallback: if no rows, use default benchmark
+      return rows.length ? rows : [CATEGORY_BENCHMARKS['default']];
     })(),
     // Primary benchmark (most common)
     benchmark:(()=>{
       const cats = results.filter(r=>r.benchmark).map(r=>r.benchmark.name);
       const primaryBM = cats.length ? (cats.sort((a,b)=>cats.filter(x=>x===b).length-cats.filter(x=>x===a).length)[0]) : 'Nifty 100 TRI';
-      const bm = results.find(r=>r.benchmark?.name===primaryBM)?.benchmark || CATEGORY_BENCHMARKS['default'];
+      const bm = results.find(r=>r.benchmark?.name===primaryBM)?.benchmark || CATEGORY_BENCHMARKS['default'] || {name:'Nifty 100 TRI',cagr5y:13.2,cagr3y:14.0,ret1y:0.8,sharpe:0.95,stddev:12.8,calendarReturns:{}};
       // Calendar returns differ by benchmark - show approximate for primary benchmark
       const isHybrid = primaryBM.toLowerCase().includes('hybrid') || primaryBM.toLowerCase().includes('crisil');
       return {
@@ -654,7 +656,7 @@ function buildReport(funds, results, knowledge) {
 // ── MAIN ANALYSIS ──────────────────────────────────────────────────────────
 async function runAnalysis(funds) {
   console.log(`\n[Phase 1] Fetching AMFI for ${funds.length} funds in parallel`);
-  const FUND_TIMEOUT = 35000; // 35s to handle large funds like Kotak Flexicap
+  const FUND_TIMEOUT = 30000; // 30s per fund
   const results = await Promise.all(funds.map(async fund => {
     console.log(`  → ${fund.name}`);
     try {
@@ -681,6 +683,19 @@ async function runAnalysis(funds) {
   }
 
   console.log(`[Phase 3] Building report`);
+  // If all funds failed, build a placeholder report with Claude knowledge only
+  if (results.every(r => r.error)) {
+    console.warn('[Phase 3] WARNING: All funds timed out — using Claude knowledge only');
+    const placeholderResults = funds.map(f => ({
+      fund: f,
+      amt: parseFloat(f.amt.replace(/[₹,\s]/g,''))||0,
+      error: 'AMFI data unavailable',
+      meta: null, benchmark: null, ret1y: null, ret3y: null, ret5y: null,
+      cal: {}, currentValue: null, investCAGR: null, gain: null
+    }));
+    results.length = 0;
+    placeholderResults.forEach(r => results.push(r));
+  }
   const report = buildReport(funds, results, knowledge);
   console.log(`[Phase 3] Done`);
   return JSON.stringify(report);
