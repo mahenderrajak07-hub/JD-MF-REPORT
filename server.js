@@ -257,41 +257,44 @@ async function fetchFundData(fund) {
   const scheme = await searchFund(fund.name);
   if (!scheme) return { fund, amt, error: 'Not found in AMFI' };
 
-  // Fetch NAV data in parallel: 13-month main + tiny windows for 3Y and 5Y
-  // This avoids downloading full 20-year history which times out on old funds
+  // PARALLEL FETCH STRATEGY - works for all funds regardless of age
+  // 1. /latest = current NAV (instant, ~200 bytes)
+  // 2. 3Y history = gives 1Y/3Y CAGR + calendar 2022-2025
+  // 3. 5Y history = gives 5Y CAGR + calendar 2020-2021
   const today = new Date();
-  const fmtD = d => {
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    return `${dd}-${mm}-${d.getFullYear()}`;
-  };
-  // Date points needed
-  const d13m = new Date(today); d13m.setMonth(today.getMonth()-13);
-  const d3y  = new Date(today); d3y.setFullYear(today.getFullYear()-3);
-  const d5y  = new Date(today); d5y.setFullYear(today.getFullYear()-5);
+  const fmtD = d => String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+d.getFullYear();
+  const d1y = new Date(today); d1y.setFullYear(today.getFullYear()-1);
+  const d3y = new Date(today); d3y.setFullYear(today.getFullYear()-3);
+  const d5y = new Date(today); d5y.setFullYear(today.getFullYear()-5);
 
-  // Parallel fetch: main 13-month history + 7-day windows around 3Y and 5Y dates
-  const [rMain, r3y, r5y] = await Promise.all([
-    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=${fmtD(d13m)}`, 15000),
-    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=${fmtD(d3y)}`, 8000)
-      .then(r => r.status===200 ? r : null).catch(() => null),
-    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=${fmtD(d5y)}`, 8000)
-      .then(r => r.status===200 ? r : null).catch(() => null),
+  const [rLatest, r3yr, r5yr] = await Promise.all([
+    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}/latest`, 6000),
+    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=${fmtD(d3y)}`, 12000)
+      .catch(() => null),
+    httpsGet('api.mfapi.in', `/mf/${scheme.schemeCode}?startDate=${fmtD(d5y)}`, 12000)
+      .catch(() => null),
   ]);
 
-  if (!rMain || rMain.status !== 200) return { fund, amt, error: `NAV fetch failed` };
+  if (!rLatest || rLatest.status !== 200) return { fund, amt, error: 'NAV fetch failed' };
 
-  const mf = JSON.parse(rMain.body);
-  const nav = mf.data;
-  const latestNav = parseFloat(nav[0].nav);
-  const latestDate = nav[0].date;
+  const latestInfo = JSON.parse(rLatest.body);
+  const latestNav = parseFloat(latestInfo.data?.[0]?.nav || latestInfo.data?.nav || 0);
+  const latestDate = latestInfo.data?.[0]?.date || latestInfo.data?.date || '';
+  if (!latestNav) return { fund, amt, error: 'Invalid NAV data' };
 
-  // Get 3Y and 5Y NAV values from their respective windows (last entry = closest to target date)
-  const nav3yArr = (r3y && r3y.status===200) ? JSON.parse(r3y.body).data : [];
-  const nav5yArr = (r5y && r5y.status===200) ? JSON.parse(r5y.body).data : [];
-  const nav3yVal = nav3yArr.length ? parseFloat(nav3yArr[nav3yArr.length-1].nav) : null;
-  const nav5yVal = nav5yArr.length ? parseFloat(nav5yArr[nav5yArr.length-1].nav) : null;
-  const nav1yVal = navAt(nav, new Date(today.getFullYear()-1, today.getMonth(), today.getDate()));
+  const mf = { meta: latestInfo.meta };
+
+  // Parse history arrays (mfapi may return full history ignoring startDate - navAt handles this)
+  const nav3yr = (r3yr?.status === 200) ? JSON.parse(r3yr.body).data : [];
+  const nav5yr = (r5yr?.status === 200) ? JSON.parse(r5yr.body).data : [];
+
+  // Use navAt() to find closest NAV to each target date - works even if startDate is ignored
+  const nav1yVal  = navAt(nav3yr, d1y);   // 1Y ago NAV from 3Y history
+  const nav3yVal  = navAt(nav3yr, d3y);   // 3Y ago NAV
+  const nav5yVal  = navAt(nav5yr, d5y) || navAt(nav3yr, d5y); // 5Y ago (fallback to 3Y array)
+
+  // Use nav3yr as primary nav array for calendar + invest date lookups
+  const nav = nav3yr.length ? nav3yr : nav5yr;
 
   // Compute CAGR using targeted fetched NAVs
   const latestD = parseD(latestDate) || new Date();
@@ -308,7 +311,7 @@ async function fetchFundData(fund) {
   const gain = currentValue ? currentValue - amt : null;
 
   // Get category-appropriate benchmark for this fund
-  const fundBenchmark = getBenchmark(mf.meta?.scheme_category);
+  const fundBenchmark = getBenchmark(latestInfo.meta?.scheme_category);
   const bmCal = fundBenchmark.calendarReturns || {};
   const BM = {
     2020: parseFloat(bmCal['2020'])||15.5,
@@ -319,7 +322,7 @@ async function fetchFundData(fund) {
     2025: parseFloat(bmCal['2025'])||3.3,
   };
   const cal = {};
-  const isHybridFund = (mf.meta?.scheme_category||'').toLowerCase().includes('balanced') ||
+  const isHybridFund = (latestInfo.meta?.scheme_category||'').toLowerCase().includes('balanced') ||
                        (mf.meta?.scheme_category||'').toLowerCase().includes('hybrid') ||
                        (mf.meta?.scheme_category||'').toLowerCase().includes('multi asset');
   const maxReasonableReturn = isHybridFund ? 50 : 80;
@@ -392,14 +395,14 @@ async function fetchFundData(fund) {
 
   // Compute beta from NAV volatility (simplified: std dev relative to category benchmark)
   // True beta needs benchmark NAV series - we approximate from fund vs benchmark stddev
-  const benchmark = getBenchmark(mf.meta?.scheme_category);
+  const benchmark = getBenchmark(latestInfo.meta?.scheme_category);
   const fundStdDev = computeStdDev(nav, 36); // 3Y monthly rolling stddev
   const betaEstimate = fundStdDev > 0 && benchmark.stddev > 0
     ? (fundStdDev / benchmark.stddev).toFixed(2)
     : null;
 
   console.log(`  [NAV] ${scheme.schemeName}: 1Y=${pct(ret1y)} 3Y=${pct(ret3y)} 5Y=${pct(ret5y)} BM:${benchmark.name}`);
-  return { fund, amt, scheme, meta: mf.meta, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
+  return { fund, amt, scheme, meta: latestInfo.meta, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
 }
 
 // ── CLAUDE — knowledge fields (manager, TER, Sharpe, Beta, overlap, rolling) ──
@@ -802,5 +805,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(process.env.PORT || 3000, () => {
-  console.log(`FundAudit v6 institutional on port ${process.env.PORT||3000} | key:${!!ANTHROPIC_API_KEY}`);
+  console.log(`JD MF Report v1 on port ${process.env.PORT||3000} | key:${!!ANTHROPIC_API_KEY}`);
 });
