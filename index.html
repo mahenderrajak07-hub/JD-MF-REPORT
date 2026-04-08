@@ -186,6 +186,49 @@ footer a:hover{color:var(--gold)}
 /* Download btn */
 .dl-btn{background:transparent;border:1px solid rgba(245,158,11,0.3);color:var(--gold);border-radius:7px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
 .dl-btn:hover{background:rgba(245,158,11,0.08);border-color:var(--gold)}
+
+/* ── PROGRESS SECTION ─────────────────────────────────────────────────── */
+.progress-section{max-width:880px;margin:0 auto 2rem;padding:0 1.5rem;}
+.progress-hdr{display:flex;align-items:center;gap:1rem;padding:1.5rem 1.75rem;background:linear-gradient(160deg,rgba(28,22,8,0.97),rgba(20,16,5,0.97));border:1px solid rgba(245,158,11,0.2);border-radius:16px;box-shadow:0 0 32px rgba(245,158,11,0.06);}
+.progress-title{font-size:16px;font-weight:700;color:#fff;}
+.progress-sub{font-size:12px;color:rgba(255,255,255,0.4);margin-top:3px;}
+.steps{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:0 4px;}
+.step-item{display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.35);padding:6px 0;}
+.step-dot{width:20px;height:20px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:rgba(255,255,255,0.2);flex-shrink:0;}
+.step.done .step-dot{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+.step.active .step-dot{background:rgba(245,158,11,0.15);border-color:var(--gold);color:var(--gold);}
+.step.done>span{color:rgba(255,255,255,0.5);}
+.step.active>span{color:#fff;font-weight:500;}
+
+/* ── REPORT TOPBAR ────────────────────────────────────────────────────── */
+#report-section{background:var(--paper);padding:2rem 0;}
+.report-topbar{max-width:880px;margin:0 auto 1.5rem;padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+.report-topbar-left{font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.3px;}
+.report-actions{display:flex;gap:10px;}
+.action-btn{font-size:12px;font-weight:600;padding:8px 18px;border-radius:8px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .18s;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);}
+.action-btn:hover{border-color:rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);color:#fff;}
+.action-btn.primary{background:linear-gradient(135deg,#b45309,#f59e0b);color:#0a0700;border:none;font-weight:700;box-shadow:0 0 16px rgba(245,158,11,0.2);}
+.action-btn.primary:hover{box-shadow:0 0 24px rgba(245,158,11,0.4);}
+#dashboard-output{max-width:880px;margin:0 auto;padding:0 1.5rem;}
+
+/* ── HOW IT WORKS SECTION ─────────────────────────────────────────────── */
+.how-section{max-width:880px;margin:0 auto 3rem;padding:0 1.5rem;}
+.how-title{font-size:11px;letter-spacing:3px;color:rgba(245,158,11,0.5);font-weight:700;text-transform:uppercase;text-align:center;margin-bottom:1.5rem;display:flex;align-items:center;gap:12px;justify-content:center;}
+.how-title::before,.how-title::after{content:'';display:block;width:40px;height:1px;background:rgba(245,158,11,0.2);}
+.how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.how-card{background:linear-gradient(160deg,rgba(28,22,8,0.7),rgba(18,14,5,0.7));border:0.5px solid rgba(245,158,11,0.12);border-radius:14px;padding:1.5rem;position:relative;overflow:hidden;}
+.how-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(245,158,11,0.3),transparent);}
+.how-num{font-size:32px;font-weight:800;color:rgba(245,158,11,0.08);letter-spacing:-1px;line-height:1;margin-bottom:12px;font-family:'Inter',sans-serif;}
+.how-card-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;}
+.how-card-body{font-size:12px;color:rgba(255,255,255,0.35);line-height:1.65;}
+
+/* ── FOOTER ───────────────────────────────────────────────────────────── */
+footer{background:rgba(5,4,0,0.98);border-top:1px solid rgba(245,158,11,0.1);padding:2rem 2rem;text-align:center;font-size:11px;color:rgba(255,255,255,0.18);letter-spacing:.04em;line-height:1.8;}
+footer strong{color:rgba(245,158,11,0.5);font-weight:600;}
+
+/* ── SCORE BAR ────────────────────────────────────────────────────────── */
+.score-bar-bg{background:rgba(245,158,11,0.1);border-radius:4px;height:6px;margin-top:6px;}
+.score-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#d97706,#f59e0b);}
 </style>
 </head>
 <body>
@@ -424,7 +467,7 @@ footer a:hover{color:var(--gold)}
   </div>
 </div>
 
-<div class="progress-section" id="progress-section">
+<div class="progress-section" id="progress-section" style="display:none">
   <div class="progress-hdr">
     <div class="spinner"></div>
     <div>
@@ -455,17 +498,17 @@ footer a:hover{color:var(--gold)}
     <div class="how-card">
       <div class="how-num">01</div>
       <div class="how-card-title">Enter your holdings</div>
-      <div class="how-card-body">Type fund names, amounts, and purchase dates. Use example portfolios to see the output instantly.</div>
+      <div class="how-card-body">Type any fund name exactly as it appears on AMFI. Add the amount invested and purchase date. Use example portfolios to see the output instantly.</div>
     </div>
     <div class="how-card">
       <div class="how-num">02</div>
-      <div class="how-card-title">AI analyses everything</div>
-      <div class="how-card-body">Our engine fetches live NAVs, computes rolling returns, Sharpe ratios, overlap matrices, and stress scenarios.</div>
+      <div class="how-card-title">Live data + AI analysis</div>
+      <div class="how-card-body">The engine fetches live NAV from AMFI, computes 1Y/3Y/5Y CAGR, alpha vs SEBI benchmarks, rolling returns, Sharpe ratio, beta and calendar year heatmap.</div>
     </div>
     <div class="how-card">
       <div class="how-num">03</div>
-      <div class="how-card-title">Get your visual report</div>
-      <div class="how-card-body">A full institutional-grade dashboard with colour-coded tables, goal projections, and a step-by-step rebalancing plan.</div>
+      <div class="how-card-title">Institutional-grade report</div>
+      <div class="how-card-body">Get a full visual audit — fund deep dive, overlap matrix, sector concentration, stress scenarios, goal projections, LTCG tax impact and rebalancing plan.</div>
     </div>
   </div>
 </div>
@@ -475,9 +518,16 @@ footer a:hover{color:var(--gold)}
 <div class="toast" id="toast"></div>
 
 <footer>
-  JD MF Report is powered by Claude AI. Analysis is for research and educational purposes only — not investment advice.<br>
-  Always consult a SEBI-registered investment advisor before making portfolio changes.<br><br>
-  Data: AMFI · Value Research · Tickertape · April 2026
+  <div style="margin-bottom:0.75rem;">
+    <strong>JD MF Report</strong> — Institutional Portfolio Intelligence
+  </div>
+  <div>
+    Powered by <strong>Claude AI</strong> · Live data from <strong>AMFI</strong> · April 2026
+  </div>
+  <div style="margin-top:0.5rem;">
+    This report is for research and educational purposes only. Not SEBI-registered investment advice.<br>
+    Always consult a qualified advisor before making portfolio decisions.
+  </div>
 </footer>
 
 <script>
