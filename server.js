@@ -135,9 +135,18 @@ function pickBest(schemes, userInput) {
       return s !== best && !sn.includes('overnight') && !sn.includes('liquid') &&
              !sn.includes('money market') && !sn.includes('direct') && s.score > 0;
     });
-    return nextBest || null;
+    return nextBest ? { ...nextBest, confidence: 0 } : null;
   }
-  return best;
+
+  // Confidence score: % of user keywords matched in scheme name
+  const userKeywords = userInput.toLowerCase().split(/\s+/)
+    .filter(w => w.length > 3 && !['fund','plan','regular','growth','direct','india','mutual'].includes(w));
+  const matchCount = userKeywords.filter(w => best.schemeName.toLowerCase().includes(w)).length;
+  const confidence = userKeywords.length ? Math.round(matchCount / userKeywords.length * 100) : 50;
+  if (confidence < 40) {
+    console.warn(`  [LOW CONFIDENCE ${confidence}%] "${userInput}" → "${best.schemeName}" — verify correct`);
+  }
+  return { ...best, confidence };
 }
 
 async function searchFund(name) {
@@ -261,6 +270,7 @@ async function fetchFundData(fund) {
   const amt = parseFloat(fund.amt.replace(/[₹,\s]/g,'')) || 0;
   const scheme = await searchFund(fund.name);
   if (!scheme) return { fund, amt, error: 'Not found in AMFI' };
+  console.log(`  [✓] "${fund.name}" → ${scheme.schemeName} (${scheme.schemeCode}) confidence:${scheme.confidence||'?'}%`);
 
   // PERMANENT FIX: Narrow-window fetches — guaranteed tiny responses for ALL funds
   // Problem: mfapi.in ignores startDate for old funds (ICICI 1994, LIC, etc.)
@@ -314,12 +324,23 @@ async function fetchFundData(fund) {
   if (!latestNav) return { fund, amt, error: 'Invalid NAV data' };
   const mf = { meta: latestInfo.meta };
 
-  // Extract NAV from narrow-window response (take first valid record)
-  const navFromWindow = r => {
+  // Extract NAV closest to target date from narrow-window response
+  const navFromWindow = (r, targetDate) => {
     if (!r || r.status !== 200) return null;
     try {
       const data = JSON.parse(r.body).data;
-      return data?.length ? parseFloat(data[0].nav) : null;
+      if (!data?.length) return null;
+      if (!targetDate || data.length === 1) return parseFloat(data[0].nav);
+      // Find record whose date is closest to target
+      const target = targetDate.getTime();
+      let best = data[0], bestDiff = Infinity;
+      for (const d of data) {
+        const parsed = parseD(d.date);
+        if (!parsed) continue;
+        const diff = Math.abs(parsed.getTime() - target);
+        if (diff < bestDiff) { bestDiff = diff; best = d; }
+      }
+      return parseFloat(best.nav);
     } catch { return null; }
   };
   // For calendar: use last record of start-window as year-open, first of end-window as year-close
@@ -332,9 +353,9 @@ async function fetchFundData(fund) {
     } catch { return null; }
   };
 
-  const nav1yVal = navFromWindow(r1y);
-  const nav3yVal = navFromWindow(r3y);
-  const nav5yVal = navFromWindow(r5y);
+  const nav1yVal = navFromWindow(r1y, d1y);
+  const nav3yVal = navFromWindow(r3y, d3y);
+  const nav5yVal = navFromWindow(r5y, d5y);
 
   // Build calendar year returns from narrow windows
   const calData = {
@@ -355,7 +376,15 @@ async function fetchFundData(fund) {
     if (rInv?.status === 200) {
       try {
         const invData = JSON.parse(rInv.body).data;
-        if (invData?.length) navInvest = parseFloat(invData[invData.length-1].nav);
+        if (invData?.length) {
+          // Find record closest to invest date
+          let best = invData[0], bestDiff = Infinity;
+          for (const d of invData) {
+            const pd = parseD(d.date);
+            if (pd) { const diff = Math.abs(pd.getTime()-investDate.getTime()); if (diff<bestDiff){bestDiff=diff;best=d;} }
+          }
+          navInvest = parseFloat(best.nav);
+        }
       } catch {}
     }
   }
@@ -478,15 +507,15 @@ async function fetchFundData(fund) {
     : null;
 
   console.log(`  [NAV] ${scheme.schemeName}: 1Y=${pct(ret1y)} 3Y=${pct(ret3y)} 5Y=${pct(ret5y)} BM:${benchmark.name}`);
-  return { fund, amt, scheme, meta: latestInfo.meta, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
+  return { fund, amt, scheme, meta: latestInfo.meta, schemeCode: scheme.schemeCode, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
 }
 
 // ── CLAUDE — knowledge fields (manager, TER, Sharpe, Beta, overlap, rolling) ──
 async function getKnowledgeFields(funds, results) {
   // Only ask Claude about funds we actually have data for
   const fundList = results.map(r => {
-    if (r.error) return `${r.fund.name}: DATA NOT AVAILABLE (timed out) — skip this fund, return null for it`;
-    return `${r.fund.name} | Category:${r.meta?.scheme_category||'Equity'} | 1Y:${pct(r.ret1y)} 3Y:${pct(r.ret3y)} 5Y:${pct(r.ret5y)} | Invested:${fmt(r.amt)} | Current:${r.currentValue?fmt(r.currentValue):'N/A'}`;
+    if (r.error) return `${r.fund.name}: DATA NOT AVAILABLE — skip, return null`;
+    return `${r.fund.name} | SchemeCode:${r.scheme?.schemeCode||'unknown'} | Category:${r.meta?.scheme_category||'Equity'} | 1Y:${pct(r.ret1y)} 3Y:${pct(r.ret3y)} 5Y:${pct(r.ret5y)} | Invested:${fmt(r.amt)} | Current:${r.currentValue?fmt(r.currentValue):'N/A'}`;
   }).join('\n');
 
   const prompt = `You are a CFA-level Indian MF analyst. For these funds, return ONLY a JSON object — no markdown.
@@ -501,6 +530,7 @@ Return this exact structure with REAL data for each fund:
   "funds": [
     {
       "name": "exact fund name from list",
+      "schemeCode": "123456",
       "manager": "current manager name(s) as of Apr 2026",
       "tenureYrs": 5,
       "tenureFlag": false,
@@ -592,16 +622,24 @@ decision=Hold if 5Y alpha>0, Switch if alpha -1% to 0%, Exit if alpha < -1%.`;
 // ── BUILD FULL REPORT ON SERVER ───────────────────────────────────────────
 function buildReport(funds, results, knowledge) {
   const kFunds = (knowledge?.funds || []).filter(k => k && k.name && typeof k.name === 'string');
-  const kMap = {};
-  for (const k of kFunds) { kMap[k.name.toLowerCase().trim()] = k; }
-  const getK = name => {
-    const direct = kMap[name.toLowerCase().trim()];
-    if (direct) return direct;
-    const lower = name.toLowerCase();
-    for (const [key, val] of Object.entries(kMap)) {
-      const keyWords = key.split(' ').filter(w=>w.length>3);
-      if (keyWords.some(w => lower.includes(w))) return val;
-    }
+  // Normalize: lowercase, remove punctuation, collapse spaces, strip common suffixes
+  const normName = n => n.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(direct|regular|growth|plan|option|fund|india|scheme|idcw|dividend)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const kMap = {}; // normalized-name → knowledge object
+  const kCodeMap = {}; // schemeCode → knowledge object
+  for (const k of kFunds) {
+    kMap[normName(k.name)] = k;
+    if (k.schemeCode) kCodeMap[String(k.schemeCode)] = k;
+  }
+  const getK = (name, schemeCode) => {
+    // 1. Exact scheme-code match (most reliable)
+    if (schemeCode && kCodeMap[String(schemeCode)]) return kCodeMap[String(schemeCode)];
+    // 2. Normalized exact name match
+    const norm = normName(name);
+    if (kMap[norm]) return kMap[norm];
+    // 3. No fuzzy fallback — return empty to avoid data bleed
     return {};
   };
 
@@ -641,14 +679,14 @@ function buildReport(funds, results, knowledge) {
   function project(cagr, yrs) { return fmt(corpus * Math.pow(1+cagr/100, yrs)); }
 
   const keyFlags = knowledge?.keyFindings?.length >= 4 ? knowledge.keyFindings : [
-    `Blended 5Y CAGR ${blendedCAGR5.toFixed(1)}% vs Nifty 100 TRI ${BM5Y}% (alpha: ${alpha5>=0?'+':''}${alpha5.toFixed(2)}%)`,
+    `Blended 5Y CAGR ${blendedCAGR5.toFixed(1)}% vs ${portfolioBM?.name||'benchmark'} ${weightedBMcagr.toFixed(1)}% (alpha: ${alpha5>=0?'+':''}${alpha5.toFixed(2)}%)`,
     `${beatCount5} of ${funds.length} funds beat benchmark on 5Y basis`,
     `Real return after 6.2% CPI: ${realReturn>=0?'+':''}${realReturn.toFixed(2)}% — ${realReturn>3?'adequate for equity risk':'inadequate — consider restructuring'}`,
     `Annual TER cost ${fmt(annualTERCost)}/yr — 10yr compounded drag ≈ ${fmt(annualTERCost*14)}`,
   ];
 
   const fundsArr = results.map(r => {
-    const k = getK(r.fund.name);
+    const k = getK(r.fund.name, r.scheme?.schemeCode);
     const c = r.cal||{};
     const alpha = r.ret5y!=null ? (r.ret5y - BM5Y) : null;
     const gain = r.gain||0;
@@ -671,9 +709,9 @@ function buildReport(funds, results, knowledge) {
     return {
       name:r.fund.name, manager:k.manager||'See factsheet', tenureYrs:k.tenureYrs||3, tenureFlag:k.tenureFlag||false,
       cagr5y:r.ret5y!=null?r.ret5y.toFixed(2)+'%':'N/A', cagr3y:r.ret3y!=null?r.ret3y.toFixed(2)+'%':'N/A', ret1y:r.ret1y!=null?r.ret1y.toFixed(2)+'%':'N/A',
-      sharpe:k.sharpe||(r.ret5y>bmCAGR5+2?'0.85':r.ret5y>bmCAGR5?'0.72':'0.58'),
-      beta:computedBeta||k.beta||'0.85',
-      stddev:computedStdDev||k.stddev||(r.meta?.scheme_category?.toLowerCase().includes('balanced')?'9.8%':'14.0%'),
+      sharpe:k.sharpe||null,  // null → shows N/A in report if Claude unavailable
+      beta:computedBeta||k.beta||null,
+      stddev:computedStdDev||k.stddev||null,
       alpha:alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+bm.name:'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||'Very High Risk',
       quality, decision,
       perf5yVal:r.ret5y||0, perf3yVal:r.ret3y||0, ret1yVal:r.ret1y||0, sharpeVal:parseFloat(k.sharpe)||0.65,
@@ -714,8 +752,25 @@ function buildReport(funds, results, knowledge) {
   const exitFunds = (fundsArr||[]).filter(f=>f.decision==='Exit').slice(0,2);
   const exitNames = exitFunds.map(f=>(f.name||'').split(' ').slice(0,2).join(' ')).join(' + ') || 'worst performers';
 
+  // Partial report flags
+  const resolvedCount = successResults.length;
+  const totalCount = funds.length;
+  const isPartial = resolvedCount < totalCount;
+  const isMinimal = resolvedCount === 0;
+  const partialWarning = isPartial
+    ? `⚠ Partial analysis: ${resolvedCount}/${totalCount} funds resolved. Conclusions below apply only to resolved funds.`
+    : null;
+  // Suppress strong verdicts when data is incomplete
+  const healthVerdict = isMinimal
+    ? 'Data unavailable — please retry'
+    : isPartial
+      ? `Partial data (${resolvedCount}/${totalCount} funds) — full analysis pending`
+      : knowledge?.healthVerdict||(alpha5>0?`Beating ${portfolioBM?.name||'benchmark'} — consolidate redundant positions`:`Underperforming ${portfolioBM?.name||'benchmark'} — restructure recommended`);
+  const fundsBeatBMLabel = isPartial
+    ? `${beatCount5}/${resolvedCount} resolved` : `${beatCount5}/${totalCount}`;
+
   return {
-    summary:{totalInvested:fmt(totalInvested),currentValue:hasAll?fmt(totalCurrent):'N/A',blendedCAGR:blendedCAGR5.toFixed(2)+'%',alphaBM:(alpha5>=0?'+':'')+alpha5.toFixed(2)+'%',realReturn:(realReturn>=0?'+':'')+realReturn.toFixed(2)+'%',annualTER:fmt(annualTERCost),fundsBeatBM:`${beatCount5}/${funds.length}`,uniqueStocks:`~${uniqueStocks}`,healthScore:healthScore+'/10',healthVerdict:knowledge?.healthVerdict||(alpha5>0?`Beating ${portfolioBM?.name||'benchmark'} — consolidate redundant positions`:`Underperforming ${portfolioBM?.name||'benchmark'} — restructure recommended`),overlapPct:overlapPct,keyFlags},
+    summary:{totalInvested:fmt(totalInvested),currentValue:hasAll?fmt(totalCurrent)+(partialNote||''):'N/A',blendedCAGR:isMinimal?'N/A':blendedCAGR5.toFixed(2)+'%',alphaBM:isMinimal?'N/A':(alpha5>=0?'+':'')+alpha5.toFixed(2)+'%',realReturn:isMinimal?'N/A':(realReturn>=0?'+':'')+realReturn.toFixed(2)+'%',annualTER:fmt(annualTERCost),fundsBeatBM:fundsBeatBMLabel,uniqueStocks:`~${uniqueStocks}`,healthScore:isMinimal?'N/A':healthScore+'/10',healthVerdict,overlapPct,isPartial,partialWarning,keyFlags},
     funds:fundsArr,
     // Build per-category benchmark rows for all unique benchmarks in portfolio
     benchmarkRows: (()=>{
@@ -755,7 +810,7 @@ function buildReport(funds, results, knowledge) {
     })()},
     recommended:[{name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Core anchor — consistent alpha'},{name:'ICICI Pru Bluechip',cat:'Large Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'15.3%',sharpe:'0.77',ter:'0.95%',role:'Large cap diversifier'},{name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive core'},{name:'Motilal Oswal Midcap',cat:'Mid Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%',role:'Growth kicker — compounding'}],
     execution:[{step:'Step 1 — April 2026 (Now)',color:'bad',detail:`Exit ${exitNames} first. Fresh FY — use full ₹1.25L LTCG exemption. Deploy into Nippon India Large Cap + UTI Nifty 50 Index.`},{step:'Step 2 — May–July 2026',color:'warn',detail:'Exit remaining underperformers. Add Motilal Oswal Midcap for missing mid-cap exposure. Split exits across months to optimise LTCG.'},{step:'Step 3 — April 2027+',color:'ok',detail:`Fresh ₹1.25L exemption for final exits. Target: 4-fund portfolio at blended TER ~0.6%. Annual saving: ${fmt(annualTERCost*0.55)}/yr.`}],
-    scorecard:[{label:'Performance consistency',score:Math.min(9,Math.max(1,5+(alpha5*0.4))).toFixed(1),note:`${beatCount5}/${funds.length} funds beat Nifty 100 TRI on 5Y basis`},{label:'Diversification',score:Math.max(1,7-(funds.length>5?2:0)-(parseFloat(overlapPct)>60?2:0)).toFixed(1),note:`${overlapPct} overlap — ${funds.length>5?'critical redundancy':'concentrated'}`},{label:'Risk control',score:'5.0',note:'Beta ~0.99 — full market downside, limited upside capture'},{label:'Cost efficiency',score:Math.min(8,Math.max(1,alpha5>2?7:alpha5>0?5:3)).toFixed(1),note:`${avgTER.toFixed(2)}% blended TER — 16x costlier than equivalent index`},{label:'Overall health',score:healthScore,note:alpha5>0?'Consolidate to eliminate redundancy':'Restructure immediately'}],
+    scorecard:[{label:'Performance consistency',score:Math.min(9,Math.max(1,5+(alpha5*0.4))).toFixed(1),note:`${beatCount5}/${successResults.length} resolved funds beat their category benchmark on 5Y basis`},{label:'Diversification',score:Math.max(1,7-(funds.length>5?2:0)-(parseFloat(overlapPct)>60?2:0)).toFixed(1),note:`${overlapPct} overlap — ${funds.length>5?'critical redundancy':'concentrated'}`},{label:'Risk control',score:'5.0',note:'Beta ~0.99 — full market downside, limited upside capture'},{label:'Cost efficiency',score:Math.min(8,Math.max(1,alpha5>2?7:alpha5>0?5:3)).toFixed(1),note:`${avgTER.toFixed(2)}% blended TER — 16x costlier than equivalent index`},{label:'Overall health',score:healthScore,note:alpha5>0?'Consolidate to eliminate redundancy':'Restructure immediately'}],
   };
 }
 
@@ -849,7 +904,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/analyse' && req.method === 'POST') {
     if (!getRateLimit(getClientIP(req))) { sendJSON(res,429,{error:'Rate limit. Try again later.'}); return; }
-    if (!ANTHROPIC_API_KEY) { sendJSON(res,500,{error:'API key not configured.'}); return; }
+    // Claude enrichment is optional — AMFI fetch works without it
     let body = '';
     req.on('data', c => { body += c; });
     req.on('end', async () => {
