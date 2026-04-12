@@ -2,7 +2,6 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -887,7 +886,7 @@ async function runAnalysis(funds) {
 
 // ── HTTP SERVER ────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  const { pathname } = url.parse(req.url, true);
+  const { pathname } = new URL(req.url, 'http://localhost');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
