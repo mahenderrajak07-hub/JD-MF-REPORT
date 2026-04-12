@@ -701,4 +701,51 @@ function resetApp(){
 }
 </script>
 </body>
-</html>
+</html>async function runAnalysis(funds) {
+  console.log(`\n[Phase 1] Fetching AMFI for ${funds.length} funds in parallel`);
+  const FUND_TIMEOUT = 22000;
+
+  const results = await Promise.all(funds.map(async fund => {
+    console.log(`  → ${fund.name}`);
+    try {
+      return await Promise.race([
+        fetchFundData(fund),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Fund fetch timed out')), FUND_TIMEOUT))
+      ]);
+    } catch (e) {
+      console.error(`  ✗ ${fund.name}: ${e.message}`);
+      return {
+        fund,
+        amt: parseFloat(fund.amt.replace(/[₹,\s]/g, '')) || 0,
+        error: e.message
+      };
+    }
+  }));
+
+  const fetchedCount = results.filter(r => !r.error && r.latestNav != null).length;
+  console.log(`[Phase 1] Done: ${fetchedCount}/${funds.length} fetched`);
+
+  let knowledge = null;
+  console.log(`[Phase 2] Claude — manager/TER/Sharpe/Beta/overlap`);
+  try {
+    if (ANTHROPIC_API_KEY) {
+      knowledge = await getKnowledgeFields(funds, results);
+      console.log(`[Phase 2] Got ${knowledge?.funds?.length || 0} fund records`);
+    } else {
+      console.warn('[Phase 2] Claude skipped (no API key) — using computed values');
+    }
+  } catch (e) {
+    console.warn(`[Phase 2] Claude skipped (${e.message}) — using computed values`);
+  }
+
+  console.log(`[Phase 3] Building report`);
+  const report = buildReport(funds, results, knowledge);
+  console.log(`[Phase 3] Done`);
+  return JSON.stringify(report);
+}function displayVal(v) {
+  return v == null || v === '' || v === 'null' ? 'N/A' : String(v);
+}displayVal(f.sharpe)
+displayVal(f.beta)
+displayVal(f.stddev)
+displayVal(f.ter)
+displayVal(f.tenureYrs ? `${f.tenureYrs}yr` : null)
