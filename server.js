@@ -284,9 +284,14 @@ async function fetchFundData(fund) {
 
   const mf = { meta: latestInfo.meta };
 
-  // Parse history arrays (mfapi may return full history ignoring startDate - navAt handles this)
-  const nav3yr = (r3yr?.status === 200) ? JSON.parse(r3yr.body).data : [];
-  const nav5yr = (r5yr?.status === 200) ? JSON.parse(r5yr.body).data : [];
+  // Parse history arrays - mfapi may ignore startDate and return full history
+  // Limit to last 2000 records max to prevent parse slowdowns on large old funds
+  const parseNav = body => {
+    const data = JSON.parse(body).data;
+    return data.length > 2000 ? data.slice(0, 2000) : data; // newest 2000 records
+  };
+  const nav3yr = (r3yr?.status === 200) ? parseNav(r3yr.body) : [];
+  const nav5yr = (r5yr?.status === 200) ? parseNav(r5yr.body) : [];
 
   // Use navAt() to find closest NAV to each target date - works even if startDate is ignored
   const nav1yVal  = navAt(nav3yr, d1y);   // 1Y ago NAV from 3Y history
@@ -299,9 +304,17 @@ async function fetchFundData(fund) {
   // Compute CAGR using targeted fetched NAVs
   const latestD = parseD(latestDate) || new Date();
   const ago = n => { const d = new Date(latestD); d.setFullYear(d.getFullYear()-n); return d; };
-  const ret1y = cagr(nav1yVal, latestNav, 1);
-  const ret3y = cagr(nav3yVal, latestNav, 3);
-  const ret5y = cagr(nav5yVal, latestNav, 5);
+  const raw1y = cagr(nav1yVal, latestNav, 1);
+  const raw3y = cagr(nav3yVal, latestNav, 3);
+  const raw5y = cagr(nav5yVal, latestNav, 5);
+  // Sanity cap: if CAGR is impossibly high, nav point was outside requested window
+  // Small/mid cap can legitimately hit 30-35% 5Y. Gold ~20%. Anything >45% is a bad nav point.
+  const MAX5 = 45, MAX3 = 60;
+  const ret1y = raw1y;
+  const ret3y = (raw3y != null && raw3y > MAX3) ? null : raw3y;
+  const ret5y = (raw5y != null && raw5y > MAX5) ? null : raw5y;
+  if (raw5y != null && raw5y > MAX5) console.warn('  [SANITY] 5Y=' + raw5y.toFixed(1) + '% capped for ' + scheme.schemeName);
+  if (raw3y != null && raw3y > MAX3) console.warn('  [SANITY] 3Y=' + raw3y.toFixed(1) + '% capped for ' + scheme.schemeName);
 
   const investDate = parseD(fund.date);
   const navInvest = investDate ? navAt(nav, investDate) : null;
@@ -325,8 +338,8 @@ async function fetchFundData(fund) {
   const isHybridFund = (latestInfo.meta?.scheme_category||'').toLowerCase().includes('balanced') ||
                        (mf.meta?.scheme_category||'').toLowerCase().includes('hybrid') ||
                        (mf.meta?.scheme_category||'').toLowerCase().includes('multi asset');
-  const maxReasonableReturn = isHybridFund ? 50 : 80;
-  const minReasonableReturn = isHybridFund ? -30 : -50;
+    const maxReasonableReturn = isHybridFund ? 40 : 65;
+  const minReasonableReturn = isHybridFund ? -25 : -45;
 
   for (const yr of [2020,2021,2022,2023,2024,2025]) {
     const s = navAt(nav, new Date(yr,0,3));
@@ -673,7 +686,10 @@ function buildReport(funds, results, knowledge) {
     risk:{blendedBeta:'0.99',bfsiPct:(sectors.find(s=>s.name==='BFSI')?.pct||38)+'%',top5StocksPct:'24%',midSmallPct:funds.length>3?'<5%':'10%',uniqueStocks:`~${uniqueStocks}`,stddev:'14.2%',maxDrawdown:'~-33%',downsideCap:'~93%',upsideCap:'~96%',stressScenarios:stress},
     sectors,
     overlap:{overallPct:overlapPct,verdict:knowledge?.overlap?.verdict||(funds.length>4?'Critical redundancy — multiple funds, one strategy':'Moderate overlap — consolidate'),topStocks},
-    projections:{corpus:fmt(corpus),rows:[{label:'Current portfolio',cagr:blendedCAGR5.toFixed(1)+'%',y5:project(blendedCAGR5,5),y10:project(blendedCAGR5,10),y15:project(blendedCAGR5,15),y20:project(blendedCAGR5,20),type:'bad'},{label:'Nifty 100 Index',cagr:'13.2%',y5:project(13.2,5),y10:project(13.2,10),y15:project(13.2,15),y20:project(13.2,20),type:'mid'},{label:'Recommended portfolio',cagr:recCAGR+'%',y5:project(recCAGR,5),y10:project(recCAGR,10),y15:project(recCAGR,15),y20:project(recCAGR,20),type:'good'}],gap20y:fmt(corpus*Math.pow(1+recCAGR/100,20)-corpus*Math.pow(1+blendedCAGR5/100,20))},
+    projections:{corpus:fmt(corpus),rows:[{label:'Current portfolio',cagr:blendedCAGR5.toFixed(1)+'%',y5:project(blendedCAGR5,5),y10:project(blendedCAGR5,10),y15:project(blendedCAGR5,15),y20:project(blendedCAGR5,20),type:'bad'},{label:'Nifty 100 Index',cagr:'13.2%',y5:project(13.2,5),y10:project(13.2,10),y15:project(13.2,15),y20:project(13.2,20),type:'mid'},{label:'Recommended portfolio',cagr:recCAGR+'%',y5:project(recCAGR,5),y10:project(recCAGR,10),y15:project(recCAGR,15),y20:project(recCAGR,20),type:'good'}],gap20y:(()=>{
+      const diff = corpus*Math.pow(1+recCAGR/100,20)-corpus*Math.pow(1+blendedCAGR5/100,20);
+      return (diff>=0?'+':'-') + fmt(Math.abs(diff));
+    })()},
     recommended:[{name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Core anchor — consistent alpha'},{name:'ICICI Pru Bluechip',cat:'Large Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'15.3%',sharpe:'0.77',ter:'0.95%',role:'Large cap diversifier'},{name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive core'},{name:'Motilal Oswal Midcap',cat:'Mid Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%',role:'Growth kicker — compounding'}],
     execution:[{step:'Step 1 — April 2026 (Now)',color:'bad',detail:`Exit ${exitNames} first. Fresh FY — use full ₹1.25L LTCG exemption. Deploy into Nippon India Large Cap + UTI Nifty 50 Index.`},{step:'Step 2 — May–July 2026',color:'warn',detail:'Exit remaining underperformers. Add Motilal Oswal Midcap for missing mid-cap exposure. Split exits across months to optimise LTCG.'},{step:'Step 3 — April 2027+',color:'ok',detail:`Fresh ₹1.25L exemption for final exits. Target: 4-fund portfolio at blended TER ~0.6%. Annual saving: ${fmt(annualTERCost*0.55)}/yr.`}],
     scorecard:[{label:'Performance consistency',score:Math.min(9,Math.max(1,5+(alpha5*0.4))).toFixed(1),note:`${beatCount5}/${funds.length} funds beat Nifty 100 TRI on 5Y basis`},{label:'Diversification',score:Math.max(1,7-(funds.length>5?2:0)-(parseFloat(overlapPct)>60?2:0)).toFixed(1),note:`${overlapPct} overlap — ${funds.length>5?'critical redundancy':'concentrated'}`},{label:'Risk control',score:'5.0',note:'Beta ~0.99 — full market downside, limited upside capture'},{label:'Cost efficiency',score:Math.min(8,Math.max(1,alpha5>2?7:alpha5>0?5:3)).toFixed(1),note:`${avgTER.toFixed(2)}% blended TER — 16x costlier than equivalent index`},{label:'Overall health',score:healthScore,note:alpha5>0?'Consolidate to eliminate redundancy':'Restructure immediately'}],
