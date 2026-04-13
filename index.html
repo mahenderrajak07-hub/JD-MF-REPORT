@@ -430,6 +430,8 @@ function buildDashboard(d,funds){
   const years=F.length>0&&F[0].calendarReturns?Object.keys(F[0].calendarReturns).filter(k=>!k.includes('Beat')).sort():['2020','2021','2022','2023','2024','2025'];
   let h=`<div class="dash">`;
 
+  if(d.summary?.isPartial){h+=`<div style="background:rgba(192,138,42,0.1);border:1px solid rgba(192,138,42,0.3);border-radius:10px;padding:10px 16px;margin-bottom:1rem;display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#c08a2a" stroke-width="1.5"/><path d="M8 4v4.5M8 11v1" stroke="#c08a2a" stroke-width="1.5" stroke-linecap="round"/></svg><span style="font-size:12px;font-weight:600;color:var(--gold-dark)">${d.summary.partialWarning||'Partial analysis — some funds could not be fetched'}</span></div>`;}
+
   h+=`<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.5rem 0 .25rem">
     <div>
       <div style="font-size:16px;font-weight:500">Portfolio audit — ${funds.length}-fund portfolio</div>
@@ -474,13 +476,13 @@ function buildDashboard(d,funds){
     <th class="d-nc">Tenure</th><th class="d-nc">Quality</th><th class="d-nc">Decision</th>
   </tr></thead><tbody>
   ${F.map(f=>`<tr>
-    <td><div class="d-fn">${f.name}</div><div class="d-fs">${f.manager||''}</div></td>
+    <td><div class="d-fn">${f.name}</div><div class="d-fs">${f.manager||'See factsheet'}</div></td>
     <td class="d-nr ${f.perf5yVal>13?'d-g':f.perf5yVal>11?'d-o':'d-r'}">${f.cagr5y}</td>
     <td class="d-nr ${f.perf3yVal>13?'d-g':f.perf3yVal>11?'d-o':'d-r'}">${f.cagr3y}</td>
     <td class="d-nr ${f.ret1yVal>0?'d-g':'d-r'}">${f.ret1y}</td>
-    <td class="d-nr ${f.sharpeVal>0.8?'d-g':f.sharpeVal>0.5?'d-o':'d-r'}">${f.sharpe}</td>
-    <td class="d-nr">${f.beta}</td><td class="d-nr">${f.stddev}</td>
-    <td class="d-nr">${f.alpha}</td><td class="d-nr">${f.ter}</td><td class="d-nc"><span class="d-tag d-tb">${f.riskCategory||'—'}</span></td>
+    <td class="d-nr ${f.sharpeVal>0.8?'d-g':f.sharpeVal>0.5?'d-o':'d-r'}">${f.sharpe||'N/A'}</td>
+    <td class="d-nr">${f.beta||'N/A'}</td><td class="d-nr">${f.stddev||'N/A'}</td>
+    <td class="d-nr">${f.alpha}</td><td class="d-nr">${f.ter||'N/A'}</td><td class="d-nc"><span class="d-tag d-tb">${f.riskCategory||'—'}</span></td>
     <td class="d-nc"><span class="d-tag ${f.tenureFlag?'d-to':'d-tb'}">${f.tenureYrs}yr${f.tenureFlag?' ⚠':''}</span></td>
     <td class="d-nc"><span class="d-vd ${qualColor(f.quality)}">${f.quality}</span></td>
     <td class="d-nc"><span class="d-vd ${decColor(f.decision)}">${f.decision==='Switch'?'⇄ Switch':f.decision==='Exit'?'✗ Exit':'✔ Hold'}</span></td>
