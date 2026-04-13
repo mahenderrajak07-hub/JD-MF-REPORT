@@ -3,6 +3,15 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
+// Suppress DEP0169 url.parse warning — emitted by Node.js http internals,
+// not by this code. Our routing already uses `new URL()` (WHATWG standard).
+const _warn = process.emitWarning.bind(process);
+process.emitWarning = (warning, ...args) => {
+  if (typeof warning === 'string' && warning.includes('DEP0169')) return;
+  if (args[0]?.code === 'DEP0169') return;
+  _warn(warning, ...args);
+};
+
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const rateLimitMap = new Map();
