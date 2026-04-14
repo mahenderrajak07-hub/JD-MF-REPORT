@@ -422,7 +422,7 @@ async function fetchFundData(fund) {
   // Phase B: Calendar data — ONE request from 2021 to today
   // mfapi.in does NOT support endDate, so we fetch all data from 2021 onwards
   // and filter by year in JS. Max ~1500 records for any fund — fast to parse.
-  const rCalAll = await httpsGet('api.mfapi.in', `/mf/${code}?startDate=01-01-2021`, 12000)
+  const rCalAll = await httpsGet('api.mfapi.in', `/mf/${code}?startDate=01-01-2020`, 12000) // include 2020 data
     .catch(()=>null);
 
   if (!rLatest || rLatest.status !== 200) return { fund, amt, error: 'NAV fetch failed' };
@@ -705,7 +705,7 @@ async function fetchFundData(fund) {
 
   // Compute beta from NAV volatility (simplified: std dev relative to category benchmark)
   // True beta needs benchmark NAV series - we approximate from fund vs benchmark stddev
-  const benchmark = getBenchmark(latestInfo.meta?.scheme_category);
+  const benchmark = getBenchmark(latestInfo.meta?.scheme_category, scheme.schemeName);
   const fundStdDev = computeStdDev(nav, 36); // 3Y monthly rolling stddev
   const betaEstimate = fundStdDev > 0 && benchmark.stddev > 0
     ? (fundStdDev / benchmark.stddev).toFixed(2)
@@ -714,7 +714,7 @@ async function fetchFundData(fund) {
   console.log(`  [NAV] ${scheme.schemeName}`);
   console.log(`    LIVE: NAV=${latestNav} as of ${latestDate}`);
   console.log(`    CAGR: 1Y=${pct(ret1y)} 3Y=${pct(ret3y)} 5Y=${pct(ret5y)} | BM:${benchmark.name}`);
-  console.log(`    CAL:  2021=${fmtC(cal[2021])} 2022=${fmtC(cal[2022])} 2023=${fmtC(cal[2023])} 2024=${fmtC(cal[2024])} 2025=${fmtC(cal[2025])}`);
+  console.log(`    CAL:  2020=${fmtC(cal[2020])} 2021=${fmtC(cal[2021])} 2022=${fmtC(cal[2022])} 2023=${fmtC(cal[2023])} 2024=${fmtC(cal[2024])} 2025=${fmtC(cal[2025])}`);
   return { fund, amt, scheme, meta: latestInfo.meta, schemeCode: scheme.schemeCode, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
 }
 
@@ -1029,37 +1029,129 @@ function buildReport(funds, results, knowledge) {
       const diff = corpus*Math.pow(1+recCAGR/100,20)-corpus*Math.pow(1+blendedCAGR5/100,20);
       return (diff>=0?'+':'-') + fmt(Math.abs(diff));
     })()},
-    // Context-aware recommendations based on portfolio fund types
+    // ── CATEGORY-AWARE RECOMMENDED PORTFOLIO ──────────────────────────────────
+  // Best fund per SEBI category (Regular Plan - Growth) — used to replace EXIT/SWITCH funds
   recommended: (()=>{
-    const cats = results.filter(r=>r.meta?.scheme_category).map(r=>r.meta.scheme_category.toLowerCase());
-    const isHybridPortfolio = cats.filter(c=>/balanced|hybrid|multi asset/.test(c)).length >= cats.length/2;
-    const isDebtPortfolio = cats.filter(c=>/debt|bond|gilt|liquid|income/.test(c)).length >= cats.length/2;
-    if (isHybridPortfolio) {
-      // Balanced Advantage Fund portfolio → recommend better BAF + diversified approach
-      return [
-        {name:'ICICI Pru Balanced Advantage',cat:'Balanced Advantage',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'11.4%',sharpe:'0.76',ter:'0.95%',role:'Best-in-class BAF — consistent risk-adjusted returns'},
-        {name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Pure equity core — higher growth potential'},
-        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive — replace high-TER BAF redundancy'},
-        {name:'HDFC Short Term Debt',cat:'Short Duration',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'7.1%',sharpe:'1.10',ter:'0.30%',role:'Debt component — replaces BAF debt allocation at lower cost'},
-      ];
-    } else if (isDebtPortfolio) {
-      return [
-        {name:'HDFC Short Term Debt',cat:'Short Duration',alloc:'40%',amt:fmt(corpus*0.40),cagr5y:'7.1%',sharpe:'1.10',ter:'0.30%',role:'Core debt — stable returns'},
-        {name:'ICICI Pru Corporate Bond',cat:'Corporate Bond',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'7.8%',sharpe:'1.05',ter:'0.35%',role:'Higher yield debt'},
-        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Equity kicker'},
-        {name:'Nippon India Liquid',cat:'Liquid',alloc:'10%',amt:fmt(corpus*0.10),cagr5y:'6.4%',sharpe:'2.10',ter:'0.20%',role:'Liquidity buffer'},
-      ];
-    } else {
-      // Default equity-focused recommendations
-      return [
-        {name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Core anchor — consistent alpha'},
-        {name:'ICICI Pru Bluechip',cat:'Large Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'15.3%',sharpe:'0.77',ter:'0.95%',role:'Large cap diversifier'},
-        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive core'},
-        {name:'Motilal Oswal Midcap',cat:'Mid Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%',role:'Growth kicker — compounding'},
-      ];
+    const BEST_IN_CAT = {
+      'large cap':          {name:'Nippon India Large Cap Fund',    cat:'Large Cap',          cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%'},
+      'mid cap':            {name:'Motilal Oswal Midcap Fund',      cat:'Mid Cap',            cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%'},
+      'small cap':          {name:'Nippon India Small Cap Fund',    cat:'Small Cap',          cagr5y:'22.4%',sharpe:'0.85',ter:'0.65%'},
+      'flexi cap':          {name:'Parag Parikh Flexi Cap Fund',    cat:'Flexi Cap',          cagr5y:'16.3%',sharpe:'0.92',ter:'0.63%'},
+      'multi cap':          {name:'Nippon India Multi Cap Fund',    cat:'Multi Cap',          cagr5y:'21.4%',sharpe:'0.88',ter:'0.89%'},
+      'balanced advantage': {name:'ICICI Pru Balanced Advantage',  cat:'Balanced Advantage', cagr5y:'11.4%',sharpe:'0.76',ter:'0.95%'},
+      'aggressive hybrid':  {name:'ICICI Pru Equity & Debt Fund',  cat:'Aggressive Hybrid',  cagr5y:'14.2%',sharpe:'0.78',ter:'1.12%'},
+      'multi asset':        {name:'ICICI Pru Multi Asset Fund',    cat:'Multi Asset',        cagr5y:'14.8%',sharpe:'0.85',ter:'0.99%'},
+      'elss':               {name:'Mirae Asset ELSS Tax Saver',    cat:'ELSS',               cagr5y:'16.1%',sharpe:'0.82',ter:'0.63%'},
+      'index':              {name:'UTI Nifty 50 Index Fund',       cat:'Index',              cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%'},
+      'dynamic bond':       {name:'ICICI Pru All Seasons Bond',    cat:'Dynamic Bond',       cagr5y:'7.9%', sharpe:'1.08',ter:'0.43%'},
+      'short duration':     {name:'HDFC Short Term Debt Fund',     cat:'Short Duration',     cagr5y:'7.1%', sharpe:'1.10',ter:'0.30%'},
+      'gold':               {name:'SBI Gold Fund',                 cat:'Gold FoF',           cagr5y:'13.8%',sharpe:'0.65',ter:'0.20%'},
+    };
+
+    // Normalize scheme_category → BEST_IN_CAT key
+    const normCat = sebiCat => {
+      const c = (sebiCat||'').toLowerCase();
+      if (c.includes('balanced advantage') || c.includes('dynamic asset')) return 'balanced advantage';
+      if (c.includes('large cap') && !c.includes('mid')) return 'large cap';
+      if (c.includes('mid cap') && !c.includes('small')) return 'mid cap';
+      if (c.includes('small cap')) return 'small cap';
+      if (c.includes('flexi cap') || c.includes('flexicap')) return 'flexi cap';
+      if (c.includes('multi cap') || c.includes('multicap')) return 'multi cap';
+      if (c.includes('multi asset')) return 'multi asset';
+      if (c.includes('aggressive hybrid')) return 'aggressive hybrid';
+      if (c.includes('elss') || c.includes('tax saver')) return 'elss';
+      if (c.includes('index') || c.includes('nifty') || c.includes('sensex')) return 'index';
+      if (c.includes('dynamic bond')) return 'dynamic bond';
+      if (c.includes('short duration') || c.includes('short term')) return 'short duration';
+      if (c.includes('gold')) return 'gold';
+      if (c.includes('hybrid')) return 'balanced advantage'; // catch-all for hybrid
+      return null;
+    };
+
+    const recMap = {}; // catKey → recommendation object
+    const seen = new Set();
+
+    for (const r of results.filter(x => !x.error)) {
+      const catKey = normCat(r.meta?.scheme_category);
+      if (!catKey) continue;
+
+      const bmCAGR5 = r.benchmark?.cagr5y || 13.2;
+      const alphaVsBM = r.ret5y != null ? r.ret5y - bmCAGR5 : null;
+      const decision = alphaVsBM == null ? 'Hold' : alphaVsBM > 1 ? 'Hold' : alphaVsBM > -1 ? 'Switch' : 'Exit';
+
+      if (decision === 'Hold') {
+        // Investor's fund is performing — keep it (no replacement needed)
+        if (!recMap[catKey]) {
+          recMap[catKey] = {
+            name: r.fund.name,
+            cat: r.meta?.scheme_category || catKey,
+            cagr5y: r.ret5y != null ? r.ret5y.toFixed(1)+'%' : 'N/A',
+            sharpe: 'N/A',
+            ter: 'N/A',
+            role: `Retain — beating ${r.benchmark?.name||'benchmark'} by ${alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(1)+'%':'N/A'}`,
+            _isUserFund: true
+          };
+        }
+      } else {
+        // EXIT or SWITCH: recommend best fund in same category
+        const best = BEST_IN_CAT[catKey];
+        if (!best || seen.has(catKey)) continue;
+        seen.add(catKey);
+
+        // Don't recommend a fund the user already holds in their portfolio
+        const alreadyInPortfolio = results.some(x =>
+          (x.fund.name||'').toLowerCase().includes((best.name||'').split(' ').slice(0,3).join(' ').toLowerCase())
+        );
+        if (alreadyInPortfolio && decision === 'Switch') continue; // they already have the best one
+
+        const reason = decision === 'Exit'
+          ? `Replace ${r.fund.name.split(' ').slice(0,2).join(' ')} (underperforming -${Math.abs(alphaVsBM||0).toFixed(1)}% vs ${r.benchmark?.name||'BM'}) — best in ${catKey} category`
+          : `Upgrade from ${r.fund.name.split(' ').slice(0,2).join(' ')} — better ${catKey} alpha`;
+
+        recMap[catKey] = { ...best, role: reason };
+      }
     }
+
+    // Deduplicate — if user already holds the "best" fund (as HOLD), don't add it again as replacement
+    const finalRecs = Object.values(recMap);
+
+    // If zero recommendations generated, fall back to category-matched defaults
+    if (finalRecs.length === 0) {
+      const cats = results.filter(r=>r.meta?.scheme_category).map(r=>normCat(r.meta.scheme_category)).filter(Boolean);
+      const primaryCat = cats[0] || 'large cap';
+      const best = BEST_IN_CAT[primaryCat] || BEST_IN_CAT['large cap'];
+      finalRecs.push({ ...best, role: 'Primary category recommendation' });
+    }
+
+    // Allocate proportionally and cap at 5 funds
+    const capped = finalRecs.slice(0, 5);
+    const allocPct = Math.floor(100 / capped.length);
+    const rem = 100 - allocPct * capped.length;
+    capped.forEach((r, i) => {
+      const pct = allocPct + (i === 0 ? rem : 0);
+      r.alloc = pct + '%';
+      r.amt = fmt(corpus * pct / 100);
+    });
+    return capped;
   })(),
-    execution:[{step:'Step 1 — April 2026 (Now)',color:'bad',detail:`Exit ${exitNames} first. Fresh FY — use full ₹1.25L LTCG exemption. Deploy into Nippon India Large Cap + UTI Nifty 50 Index.`},{step:'Step 2 — May–July 2026',color:'warn',detail:'Exit remaining underperformers. Add Motilal Oswal Midcap for missing mid-cap exposure. Split exits across months to optimise LTCG.'},{step:'Step 3 — April 2027+',color:'ok',detail:`Fresh ₹1.25L exemption for final exits. Target: 4-fund portfolio at blended TER ~0.6%. Annual saving: ${fmt(annualTERCost*0.55)}/yr.`}],
+    execution: (()=>{
+      const exitFunds2 = fundsArr.filter(f=>f.decision==='Exit').slice(0,2);
+      const switchFunds = fundsArr.filter(f=>f.decision==='Switch').slice(0,2);
+      const exitNames = exitFunds2.map(f=>(f.name||'').split(' ').slice(0,2).join(' ')).join(' + ') || 'worst performers';
+      const switchNames = switchFunds.map(f=>(f.name||'').split(' ').slice(0,2).join(' ')).join(' + ') || 'underperformers';
+      const cats = results.filter(r=>r.meta?.scheme_category).map(r=>(r.meta.scheme_category||'').toLowerCase());
+      const isHybrid = cats.filter(c=>/balanced|hybrid|multi asset/.test(c)).length >= cats.length/2;
+      const hasMid = cats.some(c=>c.includes('mid cap')) && !isHybrid;
+      const hasSmall = cats.some(c=>c.includes('small cap')) && !isHybrid;
+      const deployTarget = isHybrid
+        ? 'ICICI Pru Balanced Advantage + UTI Nifty 50 Index'
+        : 'Nippon India Large Cap' + (hasMid?' + Motilal Oswal Midcap':'') + (hasSmall?' + Nippon India Small Cap':'') + ' + UTI Nifty 50 Index';
+      return [
+        {step:'Step 1 — April 2026 (Now)',color:'bad',detail:`Exit ${exitNames} first. Fresh FY — use full ₹1.25L LTCG exemption. Deploy into ${deployTarget}.`},
+        {step:'Step 2 — May–July 2026',color:'warn',detail:switchFunds.length>0?`Switch ${switchNames} to best-in-category alternatives (see recommended portfolio above). Split exits across months to optimise LTCG.`:'Review remaining holdings quarterly. Consolidate if overlap >60%. Rebalance if any fund drifts significantly.'},
+        {step:'Step 3 — April 2027+',color:'ok',detail:`Fresh ₹1.25L LTCG exemption for final restructuring. Target: ${Math.min(funds.length,4)}-fund portfolio with blended TER <0.8%. Estimated annual TER saving: ${fmt(annualTERCost*0.55)}/yr.`}
+      ];
+    })(),
     scorecard:[{label:'Performance consistency',score:Math.min(9,Math.max(1,5+(alpha5*0.4))).toFixed(1),note:`${beatCount5}/${successResults.length} resolved funds beat their category benchmark on 5Y basis`},{label:'Diversification',score:Math.max(1,7-(funds.length>5?2:0)-(parseFloat(overlapPct)>60?2:0)).toFixed(1),note:`${overlapPct} overlap — ${funds.length>5?'critical redundancy':'concentrated'}`},{label:'Risk control',score:'5.0',note:'Beta ~0.99 — full market downside, limited upside capture'},{label:'Cost efficiency',score:Math.min(8,Math.max(1,alpha5>2?7:alpha5>0?5:3)).toFixed(1),note:`${avgTER.toFixed(2)}% blended TER — 16x costlier than equivalent index`},{label:'Overall health',score:healthScore,note:alpha5>0?'Consolidate to eliminate redundancy':'Restructure immediately'}],
   };
 }
