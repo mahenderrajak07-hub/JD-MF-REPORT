@@ -518,12 +518,12 @@ function buildDashboard(d,funds){
     <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">1-year rolling</div>
     <table class="d-tbl"><thead><tr><th>Fund</th><th class="d-nr">Avg</th><th class="d-nr">% beats BM</th><th class="d-nr">Worst</th></tr></thead><tbody>
     ${F.map(f=>`<tr><td style="font-weight:500">${f.name.split(' ').slice(0,2).join(' ')}</td><td class="d-nr d-o">${f.rolling1yAvg}</td><td class="d-nr ${parseInt(f.rolling1yBeatPct)>50?'d-o':'d-r'}">${f.rolling1yBeatPct}</td><td class="d-nr d-r">${f.rolling1yWorst}</td></tr>`).join('')}
-    <tr style="background:var(--paper)"><td style="color:var(--muted)">Nifty 100</td><td class="d-nr d-b">${B.rolling1yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
+    <tr style="background:var(--paper)"><td style="color:var(--muted);font-size:10px;white-space:nowrap">${B.name}</td><td class="d-nr d-b">${B.rolling1yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
     </tbody></table></div>
     <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">3-year rolling</div>
     <table class="d-tbl"><thead><tr><th>Fund</th><th class="d-nr">Avg</th><th class="d-nr">% beats BM</th><th class="d-nr">Min</th></tr></thead><tbody>
     ${F.map(f=>`<tr><td style="font-weight:500">${f.name.split(' ').slice(0,2).join(' ')}</td><td class="d-nr d-o">${f.rolling3yAvg}</td><td class="d-nr ${parseInt(f.rolling3yBeatPct)>50?'d-o':'d-r'}">${f.rolling3yBeatPct}</td><td class="d-nr ${parseFloat(f.rolling3yMin)>8?'d-o':'d-r'}">${f.rolling3yMin}</td></tr>`).join('')}
-    <tr style="background:var(--paper)"><td style="color:var(--muted)">Nifty 100</td><td class="d-nr d-b">${B.rolling3yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
+    <tr style="background:var(--paper)"><td style="color:var(--muted);font-size:10px;white-space:nowrap">${B.name}</td><td class="d-nr d-b">${B.rolling3yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td></tr>
     </tbody></table></div>
   </div></div>`;
 
@@ -565,8 +565,8 @@ function buildDashboard(d,funds){
       <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${f.name.split(' ').slice(0,2).join(' ')}</span><span class="d-o">${f.realReturn}</span></div>
       <div class="d-bb"><div class="d-bf" style="width:${barWidth(parseFloat(f.realReturn)||0,10)};background:#854F0B"></div></div>
     </div>`).join('')}
-    <div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">Nifty 100 TRI</span><span class="d-b">7.0%</span></div>
-    <div class="d-bb"><div class="d-bf" style="width:70%;background:#1B4F72"></div></div></div>
+    <div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">${B.name} (1Y)</span><span class="d-b">${((B.ret1y||0)-6.2).toFixed(1)+'%'}</span></div>
+    <div class="d-bb"><div class="d-bf" style="width:${barWidth(((B.ret1y||0)-6.2),10)};background:#1B4F72"></div></div></div>
     </div>
   </div></div>`;
 
