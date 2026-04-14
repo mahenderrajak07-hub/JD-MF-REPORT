@@ -600,6 +600,17 @@ async function fetchFundData(fund) {
   addNavPoint(nav3yVal, d3y);
   addNavPoint(nav5yVal, d5y);
 
+  // Full NAV history for stddev/beta computation (uses rCalAll — ~1500 records from 2020+)
+  let fullNavData = nav; // fallback to sparse array
+  if (rCalAll && rCalAll.status === 200) {
+    try {
+      const allRecords = JSON.parse(rCalAll.body).data;
+      if (allRecords?.length >= 12) {
+        fullNavData = allRecords; // newest-first, has {nav, date} format
+      }
+    } catch {}
+  }
+
   // Compute CAGR using targeted fetched NAVs
   const latestD = parseD(latestDate) || new Date();
   const ago = n => { const d = new Date(latestD); d.setFullYear(d.getFullYear()-n); return d; };
@@ -705,8 +716,9 @@ async function fetchFundData(fund) {
 
   // Compute beta from NAV volatility (simplified: std dev relative to category benchmark)
   // True beta needs benchmark NAV series - we approximate from fund vs benchmark stddev
+  // Uses fullNavData (1500+ records from 2020+) instead of sparse 4-point nav array
   const benchmark = getBenchmark(latestInfo.meta?.scheme_category, scheme.schemeName);
-  const fundStdDev = computeStdDev(nav, 36); // 3Y monthly rolling stddev
+  const fundStdDev = computeStdDev(fullNavData, 36); // 3Y monthly rolling stddev
   const betaEstimate = fundStdDev > 0 && benchmark.stddev > 0
     ? (fundStdDev / benchmark.stddev).toFixed(2)
     : null;
@@ -714,6 +726,7 @@ async function fetchFundData(fund) {
   console.log(`  [NAV] ${scheme.schemeName}`);
   console.log(`    LIVE: NAV=${latestNav} as of ${latestDate}`);
   console.log(`    CAGR: 1Y=${pct(ret1y)} 3Y=${pct(ret3y)} 5Y=${pct(ret5y)} | BM:${benchmark.name}`);
+  console.log(`    BETA: stddev=${fundStdDev||'N/A'} bmStdDev=${benchmark.stddev} beta=${betaEstimate||'N/A'}`);
   console.log(`    CAL:  2020=${fmtC(cal[2020])} 2021=${fmtC(cal[2021])} 2022=${fmtC(cal[2022])} 2023=${fmtC(cal[2023])} 2024=${fmtC(cal[2024])} 2025=${fmtC(cal[2025])}`);
   return { fund, amt, scheme, meta: latestInfo.meta, schemeCode: scheme.schemeCode, latestNav, latestDate, navInvest, ret1y, ret3y, ret5y, cal, currentValue, investCAGR, gain, yearsHeld, benchmark, betaEstimate, fundStdDev };
 }
@@ -827,6 +840,26 @@ decision=Hold if 5Y alpha>0, Switch if alpha -1% to 0%, Exit if alpha < -1%.`;
   try { return JSON.parse(clean); } catch { return []; }
 }
 
+// ── SEBI RISK LABEL FALLBACK (category-aware) ─────────────────────────────
+function getDefaultRiskCategory(sebiCategory, fundName) {
+  const cat = (sebiCategory || '').toLowerCase();
+  const name = (fundName || '').toLowerCase();
+  // Hybrid / BAF / Multi Asset → Moderately High Risk (per SEBI KIM)
+  if (/balanced|hybrid|multi asset|dynamic asset/.test(cat) || /balanced advantage|balanced adv|multi asset/.test(name))
+    return 'Moderately High Risk';
+  // Equity Savings / Arbitrage → Moderate Risk
+  if (/equity savings|arbitrage/.test(cat)) return 'Moderate Risk';
+  // Conservative Hybrid → Moderate Risk
+  if (/conservative hybrid/.test(cat)) return 'Moderate Risk';
+  // Debt / Bond / Gilt → Low to Moderate Risk
+  if (/debt|bond|gilt|liquid|overnight|money market|short duration|low duration|credit risk/.test(cat))
+    return 'Low to Moderate Risk';
+  // Gold / Commodity → High Risk
+  if (/gold|commodit/.test(cat) || /gold/.test(name)) return 'High Risk';
+  // Pure equity (Large/Mid/Small/Flexi/Multi/ELSS/Index) → Very High Risk
+  return 'Very High Risk';
+}
+
 // ── BUILD FULL REPORT ON SERVER ───────────────────────────────────────────
 function buildReport(funds, results, knowledge) {
   const kFunds = (knowledge?.funds || []).filter(k => k && k.name && typeof k.name === 'string');
@@ -933,7 +966,7 @@ function buildReport(funds, results, knowledge) {
         return rawBeta;
       })(),
       stddev:computedStdDev||k.stddev||null,
-      alpha:alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+bm.name:'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||'Very High Risk',
+      alpha:alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+bm.name:'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||getDefaultRiskCategory(r.meta?.scheme_category, r.fund.name),
       quality, decision,
       perf5yVal:r.ret5y||0, perf3yVal:r.ret3y||0, ret1yVal:r.ret1y||0, sharpeVal:parseFloat(k.sharpe)||0.65,
       calendarReturns:{'2020':fmtC(c[2020]),'2020Beat':!!c['2020Beat'],'2021':fmtC(c[2021]),'2021Beat':!!c['2021Beat'],'2022':fmtC(c[2022]),'2022Beat':!!c['2022Beat'],'2023':fmtC(c[2023]),'2023Beat':!!c['2023Beat'],'2024':fmtC(c[2024]),'2024Beat':!!c['2024Beat'],'2025':fmtC(c[2025]),'2025Beat':!!c['2025Beat']},
