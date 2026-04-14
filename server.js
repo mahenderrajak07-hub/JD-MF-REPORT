@@ -86,7 +86,8 @@ const KNOWN_SCHEMES = {
   'lic flexicap':               K(100313,'LIC MF Flexi Cap Fund-Regular Plan-Growth'),
   'lic mf flexi cap':           K(100313,'LIC MF Flexi Cap Fund-Regular Plan-Growth'),
   'sundaram balanced advantage':K(118825,'Sundaram Balanced Advantage Fund Regular Plan Growth'),
-  'sundram balanced advantage': K(118825,'Sundaram Balanced Advantage Fund Regular Plan Growth'),
+  'sundram balanced advantage':  K(118825,'Sundaram Balanced Advantage Fund Regular Plan Growth'),
+  'sundaram bal adv':            K(118825,'Sundaram Balanced Advantage Fund Regular Plan Growth'),
   'dsp mid cap':                K(108066,'DSP Mid Cap Fund - Regular Plan - Growth'),
   'dsp midcap':                 K(108066,'DSP Mid Cap Fund - Regular Plan - Growth'),
   'franklin india flexi cap':   K(101006,'Franklin India Flexi Cap Fund - Growth'),
@@ -98,7 +99,17 @@ const KNOWN_SCHEMES = {
   'motilal oswal midcap':       K(150625,'Motilal Oswal Midcap Fund - Regular Plan - Growth'),
   'uti nifty 50 index':         K(120716,'UTI Nifty 50 Index Fund - Regular Plan - Growth'),
   'hdfc index nifty 50':        K(118662,'HDFC Index Fund - Nifty 50 Plan - Growth'),
-  'kotak balanced advantage':   K(119230,'Kotak Balanced Advantage Fund - Regular Plan - Growth'),
+  // Kotak BAF: scheme 119230 was discontinued (last NAV 2014) — rely on live search
+  // 'kotak balanced advantage':  ← intentionally removed, search works reliably
+
+  // ICICI Prudential Balanced Advantage (104685) — add all typo variants seen in user inputs
+  'icici prudential balanced advantage': K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici pru balanced advantage':        K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici prudenatial balanced advantage':K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici prudenatial balanced advanatage':K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici prudential balanced advanatage':K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici pru balanced advanatage':       K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
+  'icici balanced advantage':            K(104685,'ICICI Prudential Balanced Advantage Fund - Growth'),
   'dsp multi asset allocation': K(149448,'DSP Multi Asset Allocation Fund - Regular Plan - Growth'),
   'baroda bnp paribas large cap':K(152130,'Baroda BNP Paribas Large Cap Fund - Regular Plan - Growth option'),
   'baroda bnp large cap':       K(152130,'Baroda BNP Paribas Large Cap Fund - Regular Plan - Growth option'),
@@ -221,7 +232,13 @@ async function searchFund(name) {
   const nameKey = name.toLowerCase().trim()
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
     .replace(/\b(fund|plan|regular|growth|direct|india|option)\b/g, '').trim();
-  const knownEntry = KNOWN_SCHEMES[nameKey] || KNOWN_SCHEMES[name.toLowerCase().trim()];
+  // Apply common typo corrections before KNOWN_SCHEMES lookup
+  const typoFix = s => s
+    .replace(/prudenatial/g,'prudential').replace(/advanatage/g,'advantage')
+    .replace(/advanatge/g,'advantage').replace(/advantge/g,'advantage')
+    .replace(/ballanced/g,'balanced').replace(/flexi\s*cap/g,'flexi cap');
+  const nameKeyFixed = typoFix(nameKey);
+  const knownEntry = KNOWN_SCHEMES[nameKeyFixed] || KNOWN_SCHEMES[nameKey] || KNOWN_SCHEMES[name.toLowerCase().trim()];
   if (knownEntry) {
     console.log(`  [KNOWN] "${name}" → ${knownEntry.schemeName} (${knownEntry.schemeCode})`);
     return { ...knownEntry, confidence: 100 };
@@ -314,10 +331,19 @@ const CATEGORY_BENCHMARKS = {
   'default':                   { name:'Nifty 100 TRI',           cagr5y:13.2, cagr3y:14.0, ret1y:0.8,  sharpe:0.95, stddev:12.8, calendarReturns:CALENDAR.NIFTY100 },
 };
 
-function getBenchmark(sebiCategory) {
+function getBenchmark(sebiCategory, fundName) {
+  // Also check fund name as fallback when sebiCategory is absent or wrong
+  const nameLower = (fundName || '').toLowerCase();
+  const cat = (sebiCategory || '').toLowerCase();
+
+  // Name-based override takes priority for hybrid/BAF funds where category can be mislabeled
+  if (nameLower.includes('balanced advantage') || nameLower.includes('dynamic asset allocation') || nameLower.includes('balanced adv'))
+    return CATEGORY_BENCHMARKS['Balanced Advantage Fund'];
+  if (nameLower.includes('aggressive hybrid')) return CATEGORY_BENCHMARKS['Aggressive Hybrid Fund'];
+  if (nameLower.includes('multi asset')) return CATEGORY_BENCHMARKS['Multi Asset Allocation Fund'];
+
   if (!sebiCategory) return CATEGORY_BENCHMARKS['default'];
-  const cat = sebiCategory.toLowerCase();
-  // Match by keyword
+  // Match by scheme_category keyword
   if (cat.includes('balanced advantage') || cat.includes('dynamic asset')) return CATEGORY_BENCHMARKS['Balanced Advantage Fund'];
   if (cat.includes('aggressive hybrid')) return CATEGORY_BENCHMARKS['Aggressive Hybrid Fund'];
   if (cat.includes('conservative hybrid')) return CATEGORY_BENCHMARKS['Conservative Hybrid Fund'];
@@ -405,6 +431,35 @@ async function fetchFundData(fund) {
   const latestNav = parseFloat(latestInfo.data?.[0]?.nav || latestInfo.data?.nav || 0);
   const latestDate = latestInfo.data?.[0]?.date || latestInfo.data?.date || '';
   if (!latestNav) return { fund, amt, error: 'Invalid NAV data' };
+
+  // STALENESS CHECK: if NAV date is >60 days old, scheme is discontinued or KNOWN_SCHEMES has wrong code
+  // e.g. scheme 119230 (old Kotak BAF) returns NAV from 2014 → must reject and retry with live search
+  const navDate = parseD(latestDate);
+  const daysSinceNav = navDate ? (Date.now() - navDate.getTime()) / 86400000 : 999;
+  if (daysSinceNav > 60 && !fund._overrideScheme) {
+    console.warn(`  [STALE] ${scheme.schemeName} (${scheme.schemeCode}): NAV date=${latestDate} is ${Math.round(daysSinceNav)} days old — scheme may be discontinued`);
+    // Force a live AMFI search, ignoring KNOWN_SCHEMES
+    const liveScheme = await (async () => {
+      for (const q of generateQueries(fund.name)) {
+        try {
+          const r = await httpsGet('api.mfapi.in', `/mf/search?q=${encodeURIComponent(q)}`, 6000);
+          if (r.status !== 200) continue;
+          const schemes = JSON.parse(r.body);
+          if (!schemes.length) continue;
+          const best = pickBest(schemes, fund.name);
+          // Reject if same stale code returned
+          if (best && best.schemeCode !== scheme.schemeCode) return best;
+        } catch {}
+      }
+      return null;
+    })();
+    if (liveScheme) {
+      console.log(`  [STALE-FIX] Retrying with live scheme: ${liveScheme.schemeName} (${liveScheme.schemeCode})`);
+      return fetchFundData({ ...fund, _overrideScheme: liveScheme });
+    }
+    return { fund, amt, error: `Scheme ${scheme.schemeCode} appears discontinued (NAV date: ${latestDate})` };
+  }
+
   const mf = { meta: latestInfo.meta };
 
   // Validate scheme matches user intent (catch wrong KNOWN_SCHEMES entry)
@@ -571,7 +626,7 @@ async function fetchFundData(fund) {
   const gain = currentValue ? currentValue - amt : null;
 
   // Category-appropriate benchmark for calendar Beat comparison
-  const fundBenchmark = getBenchmark(latestInfo.meta?.scheme_category);
+  const fundBenchmark = getBenchmark(latestInfo.meta?.scheme_category, scheme.schemeName);
   const bmCal = fundBenchmark.calendarReturns || {};
   const BM = {
     2020: parseFloat(bmCal['2020'])||15.5,
@@ -676,7 +731,7 @@ async function getKnowledgeFields(funds, results) {
 FUNDS (with real AMFI return data):
 ${fundList}
 
-Benchmark: Nifty 100 TRI | 5Y:${13.2}% 3Y:${14.0}% 1Y:+0.8%
+Each fund has its own SEBI benchmark (Large Cap → Nifty 100 TRI, Balanced Advantage → CRISIL Hybrid 50+50 Aggr, Mid Cap → Nifty Midcap 150 TRI, etc). Use the correct benchmark for each fund.
 
 Return this exact structure with REAL data for each fund:
 {
@@ -863,7 +918,20 @@ function buildReport(funds, results, knowledge) {
       name:r.fund.name, manager:k.manager||'See factsheet', tenureYrs:k.tenureYrs||3, tenureFlag:k.tenureFlag||false,
       cagr5y:r.ret5y!=null?r.ret5y.toFixed(2)+'%':'N/A', cagr3y:r.ret3y!=null?r.ret3y.toFixed(2)+'%':'N/A', ret1y:r.ret1y!=null?r.ret1y.toFixed(2)+'%':'N/A',
       sharpe:k.sharpe||null,  // null → shows N/A in report if Claude unavailable
-      beta:computedBeta||k.beta||null,
+      beta: (() => {
+        const rawBeta = computedBeta || k.beta;
+        if (!rawBeta) return null;
+        const b = parseFloat(rawBeta);
+        const isHybrid = (r.meta?.scheme_category||'').toLowerCase().match(/balanced|hybrid|multi asset/);
+        // Hybrid funds: beta vs their benchmark should be 0.5–1.1. Cap at 1.3.
+        // Pure equity: beta vs Nifty can reach 1.5 but >1.8 is data error.
+        const maxBeta = isHybrid ? 1.3 : 1.8;
+        if (!isNaN(b) && b > maxBeta) {
+          console.warn(`  [BETA CAP] ${r.fund.name}: beta=${b} capped to N/A (>${maxBeta} for ${isHybrid?'hybrid':'equity'})`);
+          return null;
+        }
+        return rawBeta;
+      })(),
       stddev:computedStdDev||k.stddev||null,
       alpha:alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+bm.name:'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||'Very High Risk',
       quality, decision,
@@ -961,7 +1029,36 @@ function buildReport(funds, results, knowledge) {
       const diff = corpus*Math.pow(1+recCAGR/100,20)-corpus*Math.pow(1+blendedCAGR5/100,20);
       return (diff>=0?'+':'-') + fmt(Math.abs(diff));
     })()},
-    recommended:[{name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Core anchor — consistent alpha'},{name:'ICICI Pru Bluechip',cat:'Large Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'15.3%',sharpe:'0.77',ter:'0.95%',role:'Large cap diversifier'},{name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive core'},{name:'Motilal Oswal Midcap',cat:'Mid Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%',role:'Growth kicker — compounding'}],
+    // Context-aware recommendations based on portfolio fund types
+  recommended: (()=>{
+    const cats = results.filter(r=>r.meta?.scheme_category).map(r=>r.meta.scheme_category.toLowerCase());
+    const isHybridPortfolio = cats.filter(c=>/balanced|hybrid|multi asset/.test(c)).length >= cats.length/2;
+    const isDebtPortfolio = cats.filter(c=>/debt|bond|gilt|liquid|income/.test(c)).length >= cats.length/2;
+    if (isHybridPortfolio) {
+      // Balanced Advantage Fund portfolio → recommend better BAF + diversified approach
+      return [
+        {name:'ICICI Pru Balanced Advantage',cat:'Balanced Advantage',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'11.4%',sharpe:'0.76',ter:'0.95%',role:'Best-in-class BAF — consistent risk-adjusted returns'},
+        {name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Pure equity core — higher growth potential'},
+        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive — replace high-TER BAF redundancy'},
+        {name:'HDFC Short Term Debt',cat:'Short Duration',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'7.1%',sharpe:'1.10',ter:'0.30%',role:'Debt component — replaces BAF debt allocation at lower cost'},
+      ];
+    } else if (isDebtPortfolio) {
+      return [
+        {name:'HDFC Short Term Debt',cat:'Short Duration',alloc:'40%',amt:fmt(corpus*0.40),cagr5y:'7.1%',sharpe:'1.10',ter:'0.30%',role:'Core debt — stable returns'},
+        {name:'ICICI Pru Corporate Bond',cat:'Corporate Bond',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'7.8%',sharpe:'1.05',ter:'0.35%',role:'Higher yield debt'},
+        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Equity kicker'},
+        {name:'Nippon India Liquid',cat:'Liquid',alloc:'10%',amt:fmt(corpus*0.10),cagr5y:'6.4%',sharpe:'2.10',ter:'0.20%',role:'Liquidity buffer'},
+      ];
+    } else {
+      // Default equity-focused recommendations
+      return [
+        {name:'Nippon India Large Cap',cat:'Large Cap',alloc:'30%',amt:fmt(corpus*0.30),cagr5y:'15.9%',sharpe:'0.81',ter:'0.69%',role:'Core anchor — consistent alpha'},
+        {name:'ICICI Pru Bluechip',cat:'Large Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'15.3%',sharpe:'0.77',ter:'0.95%',role:'Large cap diversifier'},
+        {name:'UTI Nifty 50 Index',cat:'Index',alloc:'20%',amt:fmt(corpus*0.20),cagr5y:'14.7%',sharpe:'0.94',ter:'0.20%',role:'Low-cost passive core'},
+        {name:'Motilal Oswal Midcap',cat:'Mid Cap',alloc:'25%',amt:fmt(corpus*0.25),cagr5y:'28.4%',sharpe:'1.14',ter:'0.58%',role:'Growth kicker — compounding'},
+      ];
+    }
+  })(),
     execution:[{step:'Step 1 — April 2026 (Now)',color:'bad',detail:`Exit ${exitNames} first. Fresh FY — use full ₹1.25L LTCG exemption. Deploy into Nippon India Large Cap + UTI Nifty 50 Index.`},{step:'Step 2 — May–July 2026',color:'warn',detail:'Exit remaining underperformers. Add Motilal Oswal Midcap for missing mid-cap exposure. Split exits across months to optimise LTCG.'},{step:'Step 3 — April 2027+',color:'ok',detail:`Fresh ₹1.25L exemption for final exits. Target: 4-fund portfolio at blended TER ~0.6%. Annual saving: ${fmt(annualTERCost*0.55)}/yr.`}],
     scorecard:[{label:'Performance consistency',score:Math.min(9,Math.max(1,5+(alpha5*0.4))).toFixed(1),note:`${beatCount5}/${successResults.length} resolved funds beat their category benchmark on 5Y basis`},{label:'Diversification',score:Math.max(1,7-(funds.length>5?2:0)-(parseFloat(overlapPct)>60?2:0)).toFixed(1),note:`${overlapPct} overlap — ${funds.length>5?'critical redundancy':'concentrated'}`},{label:'Risk control',score:'5.0',note:'Beta ~0.99 — full market downside, limited upside capture'},{label:'Cost efficiency',score:Math.min(8,Math.max(1,alpha5>2?7:alpha5>0?5:3)).toFixed(1),note:`${avgTER.toFixed(2)}% blended TER — 16x costlier than equivalent index`},{label:'Overall health',score:healthScore,note:alpha5>0?'Consolidate to eliminate redundancy':'Restructure immediately'}],
   };
