@@ -945,7 +945,7 @@ Return this exact structure with REAL data for each fund:
     {
       "name": "exact fund name from list",
       "schemeCode": "123456",
-      "manager": "current manager name(s) as of Apr 2026",
+      "manager": "actual fund manager name(s) — MUST be different for each fund, check AMFI/VR factsheet",
       "tenureYrs": 5,
       "tenureFlag": false,
       "sharpe": "0.81",
@@ -954,7 +954,6 @@ Return this exact structure with REAL data for each fund:
       "alpha": "+2.5%",
       "ter": "1.51%",  // REGULAR PLAN TER — e.g. 1.51% NOT 0.69% (direct)
       "riskCategory": "Very High Risk",  // SEBI risk label: Very High/High/Moderately High/Moderate/Low to Moderate/Low
-      "riskCategory": "Very High Risk",
       "quality": "Strong",
       "decision": "Hold",
       "quartile": "Q1",
@@ -1007,11 +1006,12 @@ IMPORTANT:
 - "riskCategory" must be the SEBI-mandated risk label from the fund's KIM/SID: "Very High Risk" / "High Risk" / "Moderately High Risk" / "Moderate Risk" / "Low to Moderate Risk" / "Low Risk"
   Debt fund typical labels: Overnight/Liquid → "Low Risk" | Money Market/Ultra Short → "Low to Moderate Risk" | Short Duration/Banking PSU → "Low to Moderate Risk" | Medium/Corporate Bond → "Moderate Risk" | Long/Gilt/Dynamic/Credit → "Moderate Risk" to "Moderately High Risk"
 - "beta" is vs the fund's own SEBI benchmark (not always Nifty 100). Balanced advantage beta vs CRISIL Hybrid index is typically 0.85-1.10. Debt fund beta vs NIFTY Debt Index is typically 0.80-1.20.
-decision=Hold if 5Y alpha>0, Switch if alpha -1% to 0%, Exit if alpha < -1%.`;
+decision=Hold if 5Y alpha>0, Switch if alpha -1% to 0%, Exit if alpha < -1%.
+- "manager" must be the ACTUAL current fund manager(s) for each specific scheme. Do NOT copy the same manager across different funds. If unsure, return "See factsheet".`;
 
   const postData = JSON.stringify({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 3000,
+    max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }]
   });
 
@@ -1181,6 +1181,32 @@ function buildReport(funds, results, knowledge) {
       benchmarkCAGR5y: (r.benchmark?.cagr5y || 13.2),
     };
   });
+
+  // ── Manager validation: catch Claude hallucinating same managers for different funds ──
+  if (fundsArr.length > 1) {
+    const realManagers = fundsArr.filter(f => f.manager && f.manager !== 'See factsheet');
+    if (realManagers.length > 1) {
+      // Check 1: If ALL funds have the exact same manager string, Claude likely copied one answer
+      const uniqueManagers = new Set(realManagers.map(f => f.manager));
+      if (uniqueManagers.size === 1 && realManagers.length >= 2) {
+        console.warn(`  [MGR-DUP] All ${realManagers.length} funds have same manager "${[...uniqueManagers][0]}" — likely hallucinated`);
+        for (const f of fundsArr) { if (f.manager !== 'See factsheet') f.manager = 'See factsheet'; }
+      }
+      // Check 2: If same manager appears for funds from different AMCs (first word differs), it's wrong
+      const mgrToAMCs = {};
+      for (const f of realManagers) {
+        const amc = f.name.split(' ')[0].toLowerCase(); // "Baroda", "ICICI", "HDFC" etc.
+        if (!mgrToAMCs[f.manager]) mgrToAMCs[f.manager] = new Set();
+        mgrToAMCs[f.manager].add(amc);
+      }
+      for (const [mgr, amcs] of Object.entries(mgrToAMCs)) {
+        if (amcs.size > 1) {
+          console.warn(`  [MGR-CROSS] "${mgr}" across AMCs [${[...amcs].join(', ')}] — replacing`);
+          for (const f of fundsArr) { if (f.manager === mgr) f.manager = 'See factsheet'; }
+        }
+      }
+    }
+  }
 
   const sectors = knowledge?.sectors?.length ? knowledge.sectors : [
     {name:'BFSI',pct:38,flag:true},{name:'IT',pct:15,flag:false},{name:'Energy',pct:9,flag:false},
