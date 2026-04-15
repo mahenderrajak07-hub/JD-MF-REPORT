@@ -1120,7 +1120,7 @@ function buildReport(funds, results, knowledge) {
         return rawBeta;
       })(),
       stddev:computedStdDev||k.stddev||null,
-      alpha:alphaVsBM!=null?(alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+bm.name:'N/A', ter:k.ter||'1.62%', riskCategory:k.riskCategory||getDefaultRiskCategory(r.meta?.scheme_category, r.fund.name),
+      alpha:(()=>{if(alphaVsBM==null)return 'N/A';const sn=bm.name.replace(/NIFTY /g,'').replace(/ Index.*$/,'').replace(/ TRI$/,'').replace(/Debt /g,'').replace('Duration','Dur.').replace('Composite','Comp.').replace('Corporate','Corp.').replace('Benchmark ','').replace('All Duration ','').replace('CRISIL ','').replace('Hybrid ','Hyb ').replace('Smallcap','SC').replace('Midcap','MC').replace('LargeMidcap','LMC');return (alphaVsBM>=0?'+':'')+alphaVsBM.toFixed(2)+'% vs '+sn;})(), ter:k.ter||'1.62%', riskCategory:k.riskCategory||getDefaultRiskCategory(r.meta?.scheme_category, r.fund.name),
       quality, decision,
       perf5yVal:r.ret5y||0, perf3yVal:r.ret3y||0, ret1yVal:r.ret1y||0, sharpeVal:parseFloat(k.sharpe)||0.65,
       calendarReturns:{'2020':fmtC(c[2020]),'2020Beat':!!c['2020Beat'],'2021':fmtC(c[2021]),'2021Beat':!!c['2021Beat'],'2022':fmtC(c[2022]),'2022Beat':!!c['2022Beat'],'2023':fmtC(c[2023]),'2023Beat':!!c['2023Beat'],'2024':fmtC(c[2024]),'2024Beat':!!c['2024Beat'],'2025':fmtC(c[2025]),'2025Beat':!!c['2025Beat']},
@@ -1229,13 +1229,19 @@ function buildReport(funds, results, knowledge) {
       const cats = results.filter(r=>r.meta?.scheme_category).map(r=>(r.meta.scheme_category||'').toLowerCase());
       const debtCount = cats.filter(c => /overnight|liquid|money|duration|bond|gilt|credit|banking.*psu|floating|debt|income/.test(c)).length;
       const hybridCount = cats.filter(c => /balanced|hybrid|multi asset|equity savings/.test(c)).length;
+      const equityCount = cats.filter(c => /large cap|mid cap|small cap|flexi|multi cap|elss|value|contra|focused|sectoral|thematic/.test(c) && !/hybrid|balanced|debt|bond/.test(c)).length;
+      const goldCount = cats.filter(c => /gold|silver|commodit/.test(c)).length;
       const isDebtHeavy = debtCount > cats.length / 2;
       const isHybridHeavy = hybridCount > cats.length / 2;
-      const maxDD = isDebtHeavy ? '~-5%' : isHybridHeavy ? '~-18%' : '~-33%';
-      const dsCap = isDebtHeavy ? '~30%' : isHybridHeavy ? '~85%' : '~93%';
-      const usCap = isDebtHeavy ? '~40%' : isHybridHeavy ? '~90%' : '~96%';
-      const bfsiPct = (sectors.find(s=>s.name==='BFSI')?.pct || (isDebtHeavy ? 15 : 38));
-      return {blendedBeta:avgBeta,bfsiPct:bfsiPct+'%',top5StocksPct:isDebtHeavy?'N/A':'24%',midSmallPct:isDebtHeavy?'N/A':(funds.length>3?'<5%':'10%'),uniqueStocks:isDebtHeavy?'N/A (debt)':`~${uniqueStocks}`,stddev:avgStdDev,maxDrawdown:maxDD,downsideCap:dsCap,upsideCap:usCap,stressScenarios:stress};
+      const hasNoEquity = equityCount === 0;
+      const maxDD = isDebtHeavy ? '~-5%' : (hasNoEquity && !isHybridHeavy) ? '~-15%' : isHybridHeavy ? '~-18%' : '~-33%';
+      const dsCap = isDebtHeavy ? '~30%' : hasNoEquity ? '~60%' : isHybridHeavy ? '~85%' : '~93%';
+      const usCap = isDebtHeavy ? '~40%' : hasNoEquity ? '~70%' : isHybridHeavy ? '~90%' : '~96%';
+      const bfsiPct = (sectors.find(s=>s.name==='BFSI')?.pct || (isDebtHeavy ? 15 : hasNoEquity ? 20 : 38));
+      const top5 = (isDebtHeavy || hasNoEquity) ? 'N/A' : '24%';
+      const midSmall = (isDebtHeavy || hasNoEquity) ? 'N/A' : (funds.length>3?'<5%':'10%');
+      const uniStocks = isDebtHeavy ? 'N/A (debt)' : hasNoEquity ? 'N/A' : `~${uniqueStocks}`;
+      return {blendedBeta:avgBeta,bfsiPct:bfsiPct+'%',top5StocksPct:top5,midSmallPct:midSmall,uniqueStocks:uniStocks,stddev:avgStdDev,maxDrawdown:maxDD,downsideCap:dsCap,upsideCap:usCap,stressScenarios:stress};
     })(),
     sectors,
     overlap:{overallPct:overlapPct,verdict:knowledge?.overlap?.verdict||(funds.length>4?'Critical redundancy — multiple funds, one strategy':'Moderate overlap — consolidate'),topStocks},
