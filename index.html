@@ -477,7 +477,7 @@ function buildDashboard(d,funds){
     <td class="d-nr ${f.sharpeVal>0.8?'d-g':f.sharpeVal>0.5?'d-o':'d-r'}">${f.sharpe||'N/A'}</td>
     <td class="d-nr">${f.beta||'N/A'}</td><td class="d-nr">${f.stddev||'N/A'}</td>
     <td class="d-nr" style="white-space:nowrap">${f.alpha}</td>
-  </tr>`).join('')}
+  </tr>`}).join('')}
   ${(d.benchmarkRows&&d.benchmarkRows.length?d.benchmarkRows:[B]).map(bm=>`<tr style="background:rgba(255,248,235,0.6)">
     <td style="color:var(--muted);font-size:10px;white-space:nowrap">${bm.name||'Benchmark'}</td>
     <td class="d-nr d-b">${typeof bm.cagr5y==='number'?bm.cagr5y.toFixed(1)+'%':bm.cagr5y||B.cagr5y}</td>
