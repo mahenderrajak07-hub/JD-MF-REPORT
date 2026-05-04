@@ -416,7 +416,7 @@ function qColor(q){return q==='Q1'?'d-tg':q==='Q2'?'d-tb':q==='Q3'?'d-to':'d-tr'
 function scoreColor(s){return s>=7?'d-g':s>=5?'d-o':'d-r';}
 function decColor(d){return d==='Hold'?'d-hold':d==='Exit'?'d-exit':'d-sw';}
 function qualColor(q){return q==='Strong'?'d-str':q==='Average'?'d-av':'d-wk';}
-function barWidth(p,m){return Math.min(100,Math.round((p/m)*100))+'%';}
+function barWidth(p,m){return Math.max(0,Math.min(100,Math.round((Math.abs(p)/m)*100)))+'%';}
 
 function buildDashboard(d,funds){
   const S=d.summary||{};const F=d.funds||[];const B=d.benchmark||{};const R=d.risk||{};
@@ -496,7 +496,7 @@ function buildDashboard(d,funds){
     <th class="d-nc">Quality</th><th class="d-nc">Decision</th>
   </tr></thead><tbody>
   ${F.map(f=>{const shortRisk=(f.riskCategory||'—').replace('Moderately ','Mod. ');return `<tr>
-    <td><div class="d-fn">${f.name.split(' ').slice(0,4).join(' ')}</div><div class="d-fs">${f.manager||'See factsheet'}</div></td>
+    <td><div class="d-fn">${f.name.split(' ').slice(0,5).join(' ')}</div></td>
     <td class="d-nr">${f.ter||'N/A'}</td>
     <td class="d-nc"><span class="d-tag d-tb" style="white-space:nowrap">${shortRisk}</span></td>
     <td class="d-nc"><span class="d-tag ${f.tenureFlag?'d-to':'d-tb'}">${f.tenureYrs}yr${f.tenureFlag?' ⚠':''}</span></td>
@@ -544,9 +544,9 @@ function buildDashboard(d,funds){
   </tr>`).join('')}
   ${(d.benchmarkRows&&d.benchmarkRows.length?d.benchmarkRows:[B]).map(bm=>`<tr style="background:rgba(255,248,235,0.6)">
     <td style="color:var(--muted);font-size:10px">${(bm.name||'Benchmark').split(' ').slice(0,4).join(' ')}</td>
-    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${bm.rolling1yAvg||bm.cagr5y||B.rolling1yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td>
-    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${bm.rolling3yAvg||bm.cagr3y||B.rolling3yAvg}</td><td class="d-nr">—</td><td class="d-nr">—</td>
-    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${bm.rolling5yAvg||bm.cagr5y||B.rolling5yAvg||B.cagr5y}</td><td class="d-nr">—</td><td class="d-nr">—</td>
+    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${(v=>(typeof v==='number'?v+'%':v||'—'))(bm.rolling1yAvg||bm.cagr5y||B.rolling1yAvg)}</td><td class="d-nr">—</td><td class="d-nr">—</td>
+    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${(v=>(typeof v==='number'?v+'%':v||'—'))(bm.rolling3yAvg||bm.cagr3y||B.rolling3yAvg)}</td><td class="d-nr">—</td><td class="d-nr">—</td>
+    <td class="d-nr d-b" style="border-left:1px solid rgba(192,138,42,0.05)">${(v=>(typeof v==='number'?v+'%':v||'—'))(bm.rolling5yAvg||bm.cagr5y||B.rolling5yAvg||B.cagr5y)}</td><td class="d-nr">—</td><td class="d-nr">—</td>
   </tr>`).join('')}
   </tbody></table></div></div>`;
 
@@ -585,8 +585,8 @@ function buildDashboard(d,funds){
     </div>`).join('')}</div>
     <div class="d-card"><div style="font-size:12px;font-weight:500;margin-bottom:8px">Real returns (after 6.2% CPI)</div>
     ${F.map(f=>`<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${f.name.split(' ').slice(0,2).join(' ')}</span><span class="d-o">${f.realReturn}</span></div>
-      <div class="d-bb"><div class="d-bf" style="width:${barWidth(parseFloat(f.realReturn)||0,10)};background:#854F0B"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${f.name.split(' ').slice(0,3).join(' ')}</span><span class="${parseFloat(f.realReturn)>0?'d-g':'d-r'}">${f.realReturn}</span></div>
+      <div class="d-bb"><div class="d-bf" style="width:${barWidth(parseFloat(f.realReturn)||0,10)};background:${parseFloat(f.realReturn)>0?'#2D6A4F':'#9B2226'}"></div></div>
     </div>`).join('')}
     <div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">${B.name} (1Y)</span><span class="d-b">${((parseFloat(B.ret1y)||0)-6.2).toFixed(1)+'%'}</span></div>
     <div class="d-bb"><div class="d-bf" style="width:${barWidth(((parseFloat(B.ret1y)||0)-6.2),10)};background:#1B4F72"></div></div></div>
