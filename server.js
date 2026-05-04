@@ -163,6 +163,19 @@ const KNOWN_SCHEMES = {
   'axis banking psu debt':                K(143338,'Axis Banking & PSU Debt Fund - Regular Plan - Growth'),
   'axis banking psu':                     K(143338,'Axis Banking & PSU Debt Fund - Regular Plan - Growth'),
   'axis banking and psu':                 K(143338,'Axis Banking & PSU Debt Fund - Regular Plan - Growth'),
+  'hsbc multi cap':                       K(147622,'HSBC Multi Cap Fund - Regular Plan - Growth'),
+  'hsbc multicap':                        K(147622,'HSBC Multi Cap Fund - Regular Plan - Growth'),
+  'hsbc muti cap':                        K(147622,'HSBC Multi Cap Fund - Regular Plan - Growth'),
+  'bandhan small cap':                    K(145362,'Bandhan Small Cap Fund - Regular Plan - Growth'),
+  'motilal oswal flexicap':               K(145082,'Motilal Oswal Flexicap Fund - Regular Plan - Growth'),
+  'motilal oswal flexi cap':              K(145082,'Motilal Oswal Flexicap Fund - Regular Plan - Growth'),
+  'motilal oswal flexicap cap':           K(145082,'Motilal Oswal Flexicap Fund - Regular Plan - Growth'),
+  'motilal oswal large and midcap':       K(103400,'Motilal Oswal Large and Midcap Fund - Regular Plan - Growth'),
+  'motilal oswal large & midcap':         K(103400,'Motilal Oswal Large and Midcap Fund - Regular Plan - Growth'),
+  'motilal oswal large midcap':           K(103400,'Motilal Oswal Large and Midcap Fund - Regular Plan - Growth'),
+  'sbi quant fund':                       K(147607,'SBI Quant Fund - Regular Plan - Growth'),
+  'baroda bnp paribas energy':            K(147610,'Baroda BNP Paribas Energy Opportunities Fund - Regular Plan - Growth'),
+  'baroda bnp energy':                    K(147610,'Baroda BNP Paribas Energy Opportunities Fund - Regular Plan - Growth'),
   'icici prudential banking and psu debt':K(104486,'ICICI Prudential Banking & PSU Debt Fund - Regular Plan - Cumulative'),
   'icici prudential banking psu':         K(104486,'ICICI Prudential Banking & PSU Debt Fund - Regular Plan - Cumulative'),
   'icici pru banking psu':                K(104486,'ICICI Prudential Banking & PSU Debt Fund - Regular Plan - Cumulative'),
@@ -176,7 +189,7 @@ const KNOWN_SCHEMES = {
 
 function generateQueries(name) {
   const queries = [name];
-  const fixes = { 'pru ':'prudential ', 'pudential':'prudential', 'advanatge':'advantage', 'advantge':'advantage', 'flexi cap':'flexicap', 'flexicap':'flexi cap', 'mid cap':'midcap', 'midcap':'mid cap', 'large cap':'largecap', 'largecap':'large cap', 'small cap':'smallcap', 'multi cap':'multicap', 'etf fof':'etf fund of fund', 'fof':'fund of fund', 'gold etf':'gold', 'short term':'short duration', 'short duration':'short term', 'medium term':'medium duration', 'medium duration':'medium term', 'long term':'long duration', 'long duration':'long term' };
+  const fixes = { 'pru ':'prudential ', 'pudential':'prudential', 'advanatge':'advantage', 'advantge':'advantage', 'flexi cap':'flexicap', 'flexicap':'flexi cap', 'mid cap':'midcap', 'midcap':'mid cap', 'large cap':'largecap', 'largecap':'large cap', 'small cap':'smallcap', 'multi cap':'multicap', 'muti cap':'multi cap', 'etf fof':'etf fund of fund', 'fof':'fund of fund', 'gold etf':'gold', 'short term':'short duration', 'short duration':'short term', 'medium term':'medium duration', 'medium duration':'medium term', 'long term':'long duration', 'long duration':'long term' };
   let lower = name.toLowerCase();
   for (const [a, b] of Object.entries(fixes)) { if (lower.includes(a)) queries.push(lower.replace(a, b)); }
   // Only add 3-word slice — never 2-word (too short, matches wrong funds)
@@ -458,6 +471,19 @@ function getBenchmark(sebiCategory, fundName) {
   if (/\bgilt\b/.test(nameLower) && (nameLower.includes('10') || nameLower.includes('constant')))
     return CATEGORY_BENCHMARKS['Gilt Fund with 10Y'];
   if (/\bgilt\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Gilt Fund'];
+  // Equity — name-based detection (fallback when mfapi returns wrong/missing category)
+  if (/\bsmall\s*cap\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Small Cap Fund'];
+  if (/\bmid\s*cap\b/.test(nameLower) && !/large/.test(nameLower)) return CATEGORY_BENCHMARKS['Mid Cap Fund'];
+  if (/\blarge\b.*\bmid\b|\bmid\b.*\blarge\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Large & Mid Cap Fund'];
+  if (/\blarge\s*cap\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Large Cap Fund'];
+  if (/\bflexi\s*cap\b|\bflexicap\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Flexi Cap Fund'];
+  if (/\bmulti\s*cap\b|\bmulticap\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Multi Cap Fund'];
+  if (/\belss\b|\btax\s*saver\b/.test(nameLower)) return CATEGORY_BENCHMARKS['ELSS'];
+  if (/\bvalue\b/.test(nameLower) && /fund/.test(nameLower)) return CATEGORY_BENCHMARKS['Value Fund'];
+  if (/\bfocused\b/.test(nameLower)) return CATEGORY_BENCHMARKS['Focused Fund'];
+  // Sectoral/Thematic — detected by fund name keywords (exclude debt funds)
+  if (!(/debt|bond|gilt|duration|liquid|overnight|income/.test(nameLower)) && /\benergy\b|\binfra\b|\bpharma\b|\btechnology\b|\bbanking\b|\bconsumption\b|\bmanufactur\b|\btransport\b|\bresources\b|\bquant\b|\bmomentum\b|\bdividend\b/.test(nameLower) && /fund/.test(nameLower))
+    return CATEGORY_BENCHMARKS['Sectoral Fund'];
 
   if (!sebiCategory) return CATEGORY_BENCHMARKS['default'];
 
@@ -1399,7 +1425,10 @@ function buildReport(funds, results, knowledge) {
       if (c.includes('gold')) return 'gold';
       // Catch-all for remaining debt categories
       if (c.includes('debt') || c.includes('bond') || c.includes('income')) return 'short duration';
-      return null;
+      // Catch-all for sectoral/thematic/other equity
+      if (c.includes('sectoral') || c.includes('thematic') || c.includes('energy') || c.includes('infrastructure') || c.includes('pharma') || c.includes('technology') || c.includes('banking') || c.includes('consumption') || c.includes('manufacturing') || c.includes('commodit') || c.includes('quant') || c.includes('momentum') || c.includes('dividend'))
+        return 'flexi cap'; // Map to flexi cap as closest diversified alternative
+      return 'flexi cap'; // Ultimate fallback for anything unrecognized
     };
 
     const recMap = {}; // catKey → recommendation object
@@ -1455,6 +1484,18 @@ function buildReport(funds, results, knowledge) {
       const primaryCat = cats[0] || 'large cap';
       const best = BEST_IN_CAT[primaryCat] || BEST_IN_CAT['large cap'];
       finalRecs.push({ ...best, role: 'Primary category recommendation' });
+    }
+
+    // If only 1-2 funds in recommendation (too concentrated), add core portfolio suggestions
+    if (finalRecs.length < 3 && corpus > 500000) {
+      const coreOptions = ['large cap','flexi cap','mid cap','index'].filter(k => !finalRecs.some(r => normCat(r.cat) === k));
+      for (const k of coreOptions) {
+        if (finalRecs.length >= 4) break;
+        const b = BEST_IN_CAT[k];
+        if (b && !finalRecs.some(r => r.name === b.name)) {
+          finalRecs.push({ ...b, role: `Add ${k} exposure for diversification` });
+        }
+      }
     }
 
     // Allocate proportionally and cap at 5 funds
